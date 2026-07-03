@@ -108,6 +108,15 @@ logic is implemented.
 - Rule 0 makes missing triage default to human review; this is a deliberate
   safety default, not a gap.
 
+### Phase 10B: BrainReview to DecisionLog Draft Link
+- Link advisory BrainReview records to durable DecisionLog drafts.
+- Draft creation is explicit and idempotent.
+- Generated DecisionLog status is always `proposed`.
+- Generated DecisionLog `approved_by` is always null.
+- No human approval workflow or execution layer exists yet.
+- Stay pre-Fable.
+- No migration is expected in this phase.
+
 ### Phase 11: Brain Review Loop
 - Add structured review loops for strategic Brain decisions.
 

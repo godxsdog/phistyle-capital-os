@@ -674,6 +674,9 @@ Tasks:
 1. Add docs/decision_request.md.
 2. Add shared/models/decision_request.py and Alembic migration.
 
+Migration note:
+Use the Phase 8A PostgreSQL enum lesson. Ensure enum types are created exactly once and avoid duplicate enum creation in Alembic migrations.
+
 DecisionRequest:
 - id
 - app_id

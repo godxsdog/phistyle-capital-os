@@ -41,6 +41,12 @@ from shared.services.brain_review_service import (
     list_brain_reviews,
     list_brain_reviews_for_request,
 )
+from shared.services.brain_decision_link_service import (
+    BrainReviewDecisionLogLinkStaleError,
+    BrainReviewDecisionRequestMissingError,
+    BrainReviewNotFoundError,
+    create_decision_log_draft_from_brain_review,
+)
 from shared.services.knowledge_service import (
     create_agent_memory,
     create_decision_log,
@@ -231,6 +237,20 @@ class BrainReviewResponse(BaseModel):
     proposed_decision_log_id: int | None
     created_by: str
     created_at: str
+
+
+class DecisionLogDraftRequest(BaseModel):
+    proposed_by: str | None = None
+
+    class Config:
+        extra = "forbid"
+
+
+class DecisionLogDraftResponse(BaseModel):
+    brain_review_id: int
+    decision_log_id: int
+    decision_log_status: str
+    created: bool
 
 
 @app.get("/health")
@@ -553,6 +573,35 @@ def post_brain_override(
         session.rollback()
         raise HTTPException(status_code=400, detail="Foreign key constraint failed") from exc
     return _brain_review_response(brain_review)
+
+
+@app.post(
+    "/decisions/brain-reviews/{brain_review_id}/decision-log-draft",
+    response_model=DecisionLogDraftResponse,
+)
+def post_brain_review_decision_log_draft(
+    brain_review_id: int,
+    request: DecisionLogDraftRequest,
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    try:
+        result = create_decision_log_draft_from_brain_review(
+            session,
+            brain_review_id=brain_review_id,
+            proposed_by=request.proposed_by,
+        )
+    except BrainReviewNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except BrainReviewDecisionRequestMissingError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except BrainReviewDecisionLogLinkStaleError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "brain_review_id": result.brain_review_id,
+        "decision_log_id": result.decision_log_id,
+        "decision_log_status": result.decision_log_status,
+        "created": result.created,
+    }
 
 
 @app.post("/llm/test")
