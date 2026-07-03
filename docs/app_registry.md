@@ -10,6 +10,8 @@ The App Registry is the OS-level source of truth for which apps exist, who owns 
 
 It lets the dashboard and future platform services list apps without importing app internals.
 
+The Python package is named `phistyle_platform.registry` to avoid conflicting with Python's standard-library `platform` module. Documentation may still refer to the OS "platform layer" as an architecture concept.
+
 ## Metadata Fields
 
 | Field | Purpose |
@@ -49,4 +51,3 @@ Returns the static registry entries as JSON.
 - Future apps can be registered before implementation.
 - Sensitive app contents must not appear in registry responses.
 - Auth and permissions are intentionally not implemented yet.
-

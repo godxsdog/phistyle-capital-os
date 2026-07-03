@@ -1,4 +1,4 @@
-from platform.registry.types import AppMetadata, AppStatus, Sensitivity
+from phistyle_platform.registry.types import AppMetadata, AppStatus, Sensitivity
 
 
 DEFAULT_APPS: tuple[AppMetadata, ...] = (

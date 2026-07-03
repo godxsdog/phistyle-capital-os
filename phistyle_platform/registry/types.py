@@ -35,3 +35,4 @@ class AppMetadata:
         payload["status"] = self.status.value
         payload["sensitivity"] = self.sensitivity.value
         return payload
+

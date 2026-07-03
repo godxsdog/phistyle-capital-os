@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from platform.registry.default_apps import DEFAULT_APPS
-from platform.registry.types import AppMetadata
+from phistyle_platform.registry.default_apps import DEFAULT_APPS
+from phistyle_platform.registry.types import AppMetadata
 
 
 class AppRegistry:
@@ -23,3 +23,4 @@ default_registry = AppRegistry()
 
 def list_registered_apps() -> list[dict[str, str]]:
     return default_registry.as_dicts()
+

@@ -7,6 +7,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY backend/app ./backend/app
 COPY shared ./shared
+COPY phistyle_platform ./phistyle_platform
 
 ENV PYTHONPATH=/app:/app/backend
 

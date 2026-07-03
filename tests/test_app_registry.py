@@ -1,4 +1,4 @@
-from platform.registry.registry import default_registry, list_registered_apps
+from phistyle_platform.registry.registry import default_registry, list_registered_apps
 
 
 def test_registry_lists_initial_apps():
@@ -19,4 +19,3 @@ def test_registry_can_get_app_by_id():
 
     assert app is not None
     assert app.id == "capital"
-
