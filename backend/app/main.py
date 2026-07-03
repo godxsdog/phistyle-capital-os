@@ -6,6 +6,7 @@ from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import os
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from phistyle_platform.registry.registry import list_registered_apps
@@ -15,6 +16,12 @@ from services.llm_router.providers.deepseek import DeepSeekProvider
 from services.llm_router.router import resolve_llm_test_route
 from services.llm_router.types import LLMRequest, ModelRole
 from shared.database.session import get_session
+from shared.models.decision_request import (
+    DecisionRequest,
+    DecisionRequestRiskLevel,
+    DecisionRequestStatus,
+    DecisionRequestType,
+)
 from shared.models.knowledge import (
     AgentMemoryType,
     DecisionLog,
@@ -31,6 +38,12 @@ from shared.services.knowledge_service import (
     list_agent_memory,
     list_decision_logs,
     list_knowledge_documents,
+)
+from shared.services.decision_request_service import (
+    create_decision_request,
+    get_decision_request,
+    list_decision_requests,
+    update_decision_request_status,
 )
 
 
@@ -115,6 +128,39 @@ class DecisionLogResponse(BaseModel):
     status: DecisionStatus
     related_request_id: str | None
     created_at: str
+
+
+class DecisionRequestCreateRequest(BaseModel):
+    app_id: str
+    decision_type: DecisionRequestType
+    question: str
+    context: str
+    options: str | None = None
+    risk_level: DecisionRequestRiskLevel
+    status: DecisionRequestStatus
+    created_by: str | None = None
+    related_knowledge_document_id: int | None = None
+    related_decision_log_id: int | None = None
+
+
+class DecisionRequestStatusRequest(BaseModel):
+    status: DecisionRequestStatus
+
+
+class DecisionRequestResponse(BaseModel):
+    id: int
+    app_id: str
+    decision_type: DecisionRequestType
+    question: str
+    context: str
+    options: str | None
+    risk_level: DecisionRequestRiskLevel
+    status: DecisionRequestStatus
+    created_by: str | None
+    related_knowledge_document_id: int | None
+    related_decision_log_id: int | None
+    created_at: str
+    updated_at: str
 
 
 @app.get("/health")
@@ -211,6 +257,65 @@ def post_knowledge_decision(
     return _decision_log_response(decision_log)
 
 
+@app.get("/decisions/requests", response_model=list[DecisionRequestResponse])
+def get_decision_requests(session: Session = Depends(get_session)) -> list[dict[str, Any]]:
+    return [_decision_request_response(decision_request) for decision_request in list_decision_requests(session)]
+
+
+@app.post("/decisions/requests", response_model=DecisionRequestResponse)
+def post_decision_request(
+    request: DecisionRequestCreateRequest,
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    try:
+        decision_request = create_decision_request(
+            session,
+            app_id=request.app_id,
+            decision_type=request.decision_type.value,
+            question=request.question,
+            context=request.context,
+            options=request.options,
+            risk_level=request.risk_level.value,
+            status=request.status.value,
+            created_by=request.created_by,
+            related_knowledge_document_id=request.related_knowledge_document_id,
+            related_decision_log_id=request.related_decision_log_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except IntegrityError as exc:
+        session.rollback()
+        raise HTTPException(status_code=400, detail="Foreign key constraint failed") from exc
+    return _decision_request_response(decision_request)
+
+
+@app.get("/decisions/requests/{decision_request_id}", response_model=DecisionRequestResponse)
+def get_decision_request_endpoint(
+    decision_request_id: int,
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    decision_request = get_decision_request(session, decision_request_id)
+    if decision_request is None:
+        raise HTTPException(status_code=404, detail=f"Unknown decision_request_id: {decision_request_id}")
+    return _decision_request_response(decision_request)
+
+
+@app.patch("/decisions/requests/{decision_request_id}/status", response_model=DecisionRequestResponse)
+def patch_decision_request_status(
+    decision_request_id: int,
+    request: DecisionRequestStatusRequest,
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    decision_request = update_decision_request_status(
+        session,
+        decision_request_id=decision_request_id,
+        status=request.status.value,
+    )
+    if decision_request is None:
+        raise HTTPException(status_code=404, detail=f"Unknown decision_request_id: {decision_request_id}")
+    return _decision_request_response(decision_request)
+
+
 @app.post("/llm/test")
 def llm_test_endpoint(request: LLMTestRequest) -> dict[str, Any]:
     try:
@@ -277,4 +382,22 @@ def _decision_log_response(decision_log: DecisionLog) -> dict[str, Any]:
         "status": decision_log.status,
         "related_request_id": decision_log.related_request_id,
         "created_at": decision_log.created_at.isoformat(),
+    }
+
+
+def _decision_request_response(decision_request: DecisionRequest) -> dict[str, Any]:
+    return {
+        "id": decision_request.id,
+        "app_id": decision_request.app_id,
+        "decision_type": decision_request.decision_type,
+        "question": decision_request.question,
+        "context": decision_request.context,
+        "options": decision_request.options,
+        "risk_level": decision_request.risk_level,
+        "status": decision_request.status,
+        "created_by": decision_request.created_by,
+        "related_knowledge_document_id": decision_request.related_knowledge_document_id,
+        "related_decision_log_id": decision_request.related_decision_log_id,
+        "created_at": decision_request.created_at.isoformat(),
+        "updated_at": decision_request.updated_at.isoformat(),
     }

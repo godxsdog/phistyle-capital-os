@@ -78,6 +78,13 @@ logic is implemented.
 - Active PostgreSQL stays on Mac mini local storage, not NAS, SMB, or network
   storage.
 
+### Phase 8B: Decision Request Scaffold
+- Add structured records for decision questions before triage or Brain review.
+- Stay pre-Triage, pre-Brain-Orchestrator, and pre-execution.
+- Record questions, context, free-form options, risk, status, and related
+  Knowledge / Decision Log links.
+- Known gap: no status state-machine enforcement yet.
+
 ### Phase 9: Triage Agent
 - Add low-cost triage before waking the Brain.
 - Resolve how triage escalation relates to Phase 7B's `escalate_to_fable`
