@@ -9,6 +9,7 @@ from collections.abc import Sequence
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 
 revision: str = "0002_add_knowledge_memory_tables"
@@ -17,35 +18,40 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 
-knowledge_source_type = sa.Enum(
+knowledge_source_type = postgresql.ENUM(
     "manual",
     "agent_generated",
     "import",
     name="knowledge_source_type",
+    create_type=False,
 )
-storage_backend = sa.Enum(
+storage_backend = postgresql.ENUM(
     "local",
     "nas",
     "external",
     name="storage_backend",
+    create_type=False,
 )
-agent_memory_type = sa.Enum(
+agent_memory_type = postgresql.ENUM(
     "observation",
     "summary",
     "decision_context",
     name="agent_memory_type",
+    create_type=False,
 )
-memory_importance = sa.Enum(
+memory_importance = postgresql.ENUM(
     "low",
     "medium",
     "high",
     name="memory_importance",
+    create_type=False,
 )
-decision_status = sa.Enum(
+decision_status = postgresql.ENUM(
     "proposed",
     "approved",
     "rejected",
     name="decision_status",
+    create_type=False,
 )
 
 
@@ -109,4 +115,3 @@ def downgrade() -> None:
     agent_memory_type.drop(bind, checkfirst=True)
     storage_backend.drop(bind, checkfirst=True)
     knowledge_source_type.drop(bind, checkfirst=True)
-
