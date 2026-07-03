@@ -16,7 +16,8 @@ cd backend
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+cd ..
+uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 Health check:
@@ -24,4 +25,3 @@ Health check:
 ```sh
 curl http://localhost:8000/health
 ```
-

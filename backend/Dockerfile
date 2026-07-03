@@ -9,8 +9,8 @@ COPY backend/app ./backend/app
 COPY shared ./shared
 COPY phistyle_platform ./phistyle_platform
 
-ENV PYTHONPATH=/app:/app/backend
+ENV PYTHONPATH=/app
 
 EXPOSE 8000
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "backend.app.main:app", "--host", "0.0.0.0", "--port", "8000"]
