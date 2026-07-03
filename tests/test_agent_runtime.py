@@ -1,8 +1,35 @@
 import pytest
 
-from phistyle_platform.runtime.runtime import create_default_runtime
+from phistyle_platform.runtime.runtime import CodeReviewAgent, create_default_runtime
 from phistyle_platform.runtime.types import UnknownAgentError
 from services.llm_router.types import LLMResponse
+
+
+def stub_review(**overrides):
+    review = {
+        "summary": "LLM review summary.",
+        "critical_issues": [],
+        "medium_issues": [],
+        "low_issues": [],
+        "architecture_risks": [],
+        "security_risks": [],
+        "test_gaps": [],
+    }
+    review.update(overrides)
+    return review
+
+
+def run_code_review(diff, scope="backend", risk_level="low", review=None):
+    agent = CodeReviewAgent(call_llm=lambda request: review or stub_review())
+    result = agent.run(
+        {
+            "diff": diff,
+            "scope": scope,
+            "risk_level": risk_level,
+        },
+        context=type("Context", (), {"run_id": "test-run"})(),
+    )
+    return result.output
 
 
 def test_list_agents_includes_default_agents():
@@ -22,6 +49,12 @@ def test_list_agents_includes_default_agents():
             "name": "Daily Brief Agent",
             "role": "summarizer",
             "description": "Summarizes provided text into a short structured brief.",
+        },
+        {
+            "id": "code-review-agent",
+            "name": "Code Review Agent",
+            "role": "reviewer",
+            "description": "Reviews code changes and returns advisory-only recommendations.",
         },
     ]
 
@@ -125,3 +158,93 @@ def test_run_daily_brief_agent_falls_back_when_response_is_not_json(monkeypatch)
         "risk_flags": [],
         "source": "manual_input",
     }
+
+
+def test_code_review_agent_secrets_request_changes_regardless_of_risk_level():
+    output = run_code_review(
+        "diff --git a/backend/app/main.py b/backend/app/main.py\n"
+        "+++ b/backend/app/main.py\n"
+        "+DEEPSEEK_API_KEY=sk-test",
+        risk_level="low",
+    )
+
+    assert output["summary"] == "LLM review summary."
+    assert output["recommendation"] == "request_changes"
+
+
+def test_code_review_agent_provider_logic_outside_adapters_requests_changes():
+    output = run_code_review(
+        "diff --git a/backend/app/main.py b/backend/app/main.py\n"
+        "+++ b/backend/app/main.py\n"
+        "+provider = 'deepseek'",
+    )
+
+    assert output["recommendation"] == "request_changes"
+
+
+def test_code_review_agent_high_risk_escalates_to_fable_when_no_other_issues():
+    output = run_code_review(
+        "diff --git a/docs/readme.md b/docs/readme.md\n"
+        "+++ b/docs/readme.md\n"
+        "+Documentation update.",
+        scope="docs",
+        risk_level="high",
+    )
+
+    assert output["recommendation"] == "escalate_to_fable"
+
+
+def test_code_review_agent_behavior_change_without_tests_requests_changes():
+    output = run_code_review(
+        "diff --git a/backend/app/main.py b/backend/app/main.py\n"
+        "+++ b/backend/app/main.py\n"
+        "+def new_endpoint():\n"
+        "+    return {'status': 'ok'}",
+    )
+
+    assert output["recommendation"] == "request_changes"
+    assert output["test_gaps"] == [
+        "Behavior change detected without an accompanying tests/ change."
+    ]
+
+
+def test_code_review_agent_clean_low_risk_diff_approves():
+    output = run_code_review(
+        "diff --git a/backend/app/main.py b/backend/app/main.py\n"
+        "+++ b/backend/app/main.py\n"
+        "+def new_endpoint():\n"
+        "+    return {'status': 'ok'}\n"
+        "diff --git a/tests/test_main.py b/tests/test_main.py\n"
+        "+++ b/tests/test_main.py\n"
+        "+def test_new_endpoint():\n"
+        "+    assert True",
+    )
+
+    assert output["recommendation"] == "approve"
+
+
+def test_code_review_agent_invalid_scope_or_risk_level_requests_changes():
+    output = run_code_review(
+        "diff --git a/docs/readme.md b/docs/readme.md\n"
+        "+++ b/docs/readme.md\n"
+        "+Documentation update.",
+        scope="unknown",
+        risk_level="extreme",
+    )
+
+    assert output["recommendation"] == "request_changes"
+    assert output["critical_issues"] == [
+        "Invalid scope: unknown",
+        "Invalid risk_level: extreme",
+    ]
+
+
+def test_code_review_agent_secrets_win_over_high_risk_escalation():
+    output = run_code_review(
+        "diff --git a/backend/app/main.py b/backend/app/main.py\n"
+        "+++ b/backend/app/main.py\n"
+        "+token = 'sk-ant-secret'",
+        risk_level="high",
+    )
+
+    assert output["recommendation"] == "request_changes"

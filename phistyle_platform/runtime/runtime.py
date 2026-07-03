@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime
-from typing import Any
+from typing import Any, Callable
 from uuid import uuid4
 
 from phistyle_platform.runtime.context import AgentRunContext
@@ -127,6 +128,187 @@ class DailyBriefAgent:
         return [item for item in value if isinstance(item, str)]
 
 
+class CodeReviewAgent:
+    metadata = AgentMetadata(
+        id="code-review-agent",
+        name="Code Review Agent",
+        role="reviewer",
+        description="Reviews code changes and returns advisory-only recommendations.",
+    )
+    valid_scopes = {"backend", "frontend", "llm_router", "docs"}
+    valid_risk_levels = {"low", "medium", "high"}
+    secret_patterns = (
+        re.compile(r"sk-ant-"),
+        re.compile(r"sk-"),
+        re.compile(r"API_KEY="),
+        re.compile(r"-----BEGIN PRIVATE KEY-----"),
+    )
+    provider_names = ("deepseek", "fable", "openai", "ollama")
+
+    def __init__(self, call_llm: Callable[[dict[str, Any]], dict[str, Any]] | None = None) -> None:
+        self.call_llm = call_llm or self._stub_call_llm
+
+    def run(self, input_data: dict[str, Any], context: AgentRunContext) -> AgentRunResult:
+        now = datetime.utcnow()
+        diff = str(input_data.get("diff", ""))
+        scope = str(input_data.get("scope", ""))
+        risk_level = str(input_data.get("risk_level", ""))
+        llm_review = self._normalized_llm_review(
+            self.call_llm(
+                {
+                    "diff": diff,
+                    "scope": scope,
+                    "risk_level": risk_level,
+                }
+            )
+        )
+        critical_issues = list(llm_review["critical_issues"])
+        test_gaps = list(llm_review["test_gaps"])
+
+        invalid_notes = self._validation_notes(scope, risk_level)
+        if invalid_notes:
+            critical_issues.extend(invalid_notes)
+
+        has_secrets = self._contains_secret(diff)
+        has_provider_logic_outside_adapters = self._has_provider_logic_outside_adapters(diff)
+        has_test_gap = self._has_behavior_change_without_tests(diff)
+        if has_test_gap:
+            test_gaps.append("Behavior change detected without an accompanying tests/ change.")
+
+        recommendation = self._recommendation(
+            invalid_notes=invalid_notes,
+            has_secrets=has_secrets,
+            has_provider_logic_outside_adapters=has_provider_logic_outside_adapters,
+            has_test_gap=has_test_gap,
+            risk_level=risk_level,
+        )
+        return AgentRunResult(
+            agent_id=self.metadata.id,
+            status="success",
+            output={
+                "summary": llm_review["summary"],
+                "critical_issues": critical_issues,
+                "medium_issues": llm_review["medium_issues"],
+                "low_issues": llm_review["low_issues"],
+                "architecture_risks": llm_review["architecture_risks"],
+                "security_risks": llm_review["security_risks"],
+                "test_gaps": test_gaps,
+                "recommendation": recommendation,
+            },
+            run_id=context.run_id,
+            started_at=now,
+            finished_at=datetime.utcnow(),
+            metadata={
+                "role": self.metadata.role,
+                "advisory_only": True,
+            },
+        )
+
+    def _stub_call_llm(self, request: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "summary": "Stub code review response. Real Gemini review is not wired yet.",
+            "critical_issues": [],
+            "medium_issues": [],
+            "low_issues": [],
+            "architecture_risks": [],
+            "security_risks": [],
+            "test_gaps": [],
+        }
+
+    def _normalized_llm_review(self, review: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "summary": review.get("summary", ""),
+            "critical_issues": self._string_list_or_empty(review.get("critical_issues")),
+            "medium_issues": self._string_list_or_empty(review.get("medium_issues")),
+            "low_issues": self._string_list_or_empty(review.get("low_issues")),
+            "architecture_risks": self._string_list_or_empty(review.get("architecture_risks")),
+            "security_risks": self._string_list_or_empty(review.get("security_risks")),
+            "test_gaps": self._string_list_or_empty(review.get("test_gaps")),
+        }
+
+    def _validation_notes(self, scope: str, risk_level: str) -> list[str]:
+        notes = []
+        if scope not in self.valid_scopes:
+            notes.append(f"Invalid scope: {scope}")
+        if risk_level not in self.valid_risk_levels:
+            notes.append(f"Invalid risk_level: {risk_level}")
+        return notes
+
+    def _contains_secret(self, diff: str) -> bool:
+        return any(pattern.search(diff) for pattern in self.secret_patterns)
+
+    def _has_provider_logic_outside_adapters(self, diff: str) -> bool:
+        provider_name_present = any(name in diff.lower() for name in self.provider_names)
+        if not provider_name_present:
+            return False
+        return any(not self._is_adapter_or_provider_path(path) for path in self._changed_paths(diff))
+
+    def _has_behavior_change_without_tests(self, diff: str) -> bool:
+        paths = self._changed_paths(diff)
+        if not paths:
+            return False
+        touches_behavior = any(
+            not self._is_test_path(path) and not self._is_doc_path(path)
+            for path in paths
+        )
+        touches_tests = any(self._is_test_path(path) for path in paths)
+        return touches_behavior and not touches_tests
+
+    def _recommendation(
+        self,
+        *,
+        invalid_notes: list[str],
+        has_secrets: bool,
+        has_provider_logic_outside_adapters: bool,
+        has_test_gap: bool,
+        risk_level: str,
+    ) -> str:
+        if invalid_notes:
+            return "request_changes"
+        if has_secrets:
+            return "request_changes"
+        if has_provider_logic_outside_adapters:
+            return "request_changes"
+        if risk_level == "high":
+            return "escalate_to_fable"
+        if has_test_gap:
+            return "request_changes"
+        return "approve"
+
+    def _changed_paths(self, diff: str) -> set[str]:
+        paths: set[str] = set()
+        for line in diff.splitlines():
+            if line.startswith("diff --git "):
+                parts = line.split()
+                if len(parts) >= 4:
+                    paths.add(self._clean_diff_path(parts[3]))
+            elif line.startswith("+++ "):
+                path = line.removeprefix("+++ ").strip()
+                if path != "/dev/null":
+                    paths.add(self._clean_diff_path(path))
+        return {path for path in paths if path}
+
+    def _clean_diff_path(self, path: str) -> str:
+        if path.startswith("a/") or path.startswith("b/"):
+            return path[2:]
+        return path
+
+    def _is_adapter_or_provider_path(self, path: str) -> bool:
+        parts = path.split("/")
+        return "adapters" in parts or "providers" in parts
+
+    def _is_test_path(self, path: str) -> bool:
+        return path.startswith("tests/") or "/tests/" in path or path.endswith("_test.py")
+
+    def _is_doc_path(self, path: str) -> bool:
+        return path.startswith("docs/") or path.endswith(".md")
+
+    def _string_list_or_empty(self, value: Any) -> list[str]:
+        if not isinstance(value, list):
+            return []
+        return [item for item in value if isinstance(item, str)]
+
+
 class AgentRuntime:
     def __init__(self, registry: AgentRegistry | None = None) -> None:
         self.registry = registry or AgentRegistry()
@@ -150,6 +332,7 @@ def create_default_runtime() -> AgentRuntime:
     registry = AgentRegistry()
     registry.register(EchoAgent())
     registry.register(DailyBriefAgent())
+    registry.register(CodeReviewAgent())
     return AgentRuntime(registry=registry)
 
 
@@ -166,6 +349,7 @@ def run_agent(agent_id: str, input_data: dict[str, Any]) -> AgentRunResult:
 
 __all__ = [
     "AgentRuntime",
+    "CodeReviewAgent",
     "DailyBriefAgent",
     "EchoAgent",
     "UnknownAgentError",

@@ -59,6 +59,35 @@ logic is implemented.
 - Run lint checks.
 - Do not deploy if tests fail.
 
+### Phase 7C: Brain-First Architecture Patch
+- Document the difference between Fable provider mode and Fable Brain mode.
+- Clarify that the LLM Router is an execution layer, not the strategic
+  decision-maker.
+- Define the future Brain-first flow across Triage, Brain Orchestrator,
+  Knowledge / Memory, Agent Runtime, and LLM Router.
+- See `docs/brain_architecture.md`.
+
+### Phase 8: Knowledge / Memory Layer
+- Store summaries and future decision context for Brain use.
+- Keep Brain reads summary-first by default.
+
+### Phase 9: Triage Agent
+- Add low-cost triage before waking the Brain.
+- Resolve how triage escalation relates to Phase 7B's `escalate_to_fable`
+  recommendation pattern.
+
+### Phase 10: Brain Orchestrator
+- Implement Brain mode as an orchestrator that can plan, delegate, review, and
+  decide.
+- Define Decision Log schema and its relationship to `llm_usage_log`.
+
+### Phase 11: Brain Review Loop
+- Add structured review loops for strategic Brain decisions.
+
+### Phase 12: Capital App Intelligence
+- Begin Capital app intelligence work after the Brain and Memory foundations are
+  clear.
+
 ## Future Product Phases
 
 These remain future work and should not be started until the platform foundation
