@@ -5,9 +5,10 @@ WORKDIR /app
 COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY backend/app ./backend/app
-COPY shared ./shared
+COPY backend ./backend
 COPY phistyle_platform ./phistyle_platform
+COPY services ./services
+COPY shared ./shared
 
 ENV PYTHONPATH=/app
 
