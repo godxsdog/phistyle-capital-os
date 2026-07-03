@@ -90,6 +90,12 @@ logic is implemented.
 - Resolve how triage escalation relates to Phase 7B's `escalate_to_fable`
   recommendation pattern.
 
+### Phase 9A: Triage Agent Scaffold
+- Add deterministic Triage Agent and persisted TriageResult records.
+- Stay pre-Fable and pre-Brain-Orchestrator.
+- Escalation is advisory-only and does not call Fable.
+- `risk_level` is passthrough only, not independently reassessed.
+
 ### Phase 10: Brain Orchestrator
 - Implement Brain mode as an orchestrator that can plan, delegate, review, and
   decide.

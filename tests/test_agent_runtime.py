@@ -1,6 +1,6 @@
 import pytest
 
-from phistyle_platform.runtime.runtime import CodeReviewAgent, create_default_runtime
+from phistyle_platform.runtime.runtime import CodeReviewAgent, TriageAgent, create_default_runtime
 from phistyle_platform.runtime.types import UnknownAgentError
 from services.llm_router.types import LLMResponse
 
@@ -55,6 +55,12 @@ def test_list_agents_includes_default_agents():
             "name": "Code Review Agent",
             "role": "reviewer",
             "description": "Reviews code changes and returns advisory-only recommendations.",
+        },
+        {
+            "id": "triage-agent",
+            "name": "Triage Agent",
+            "role": "triage",
+            "description": "Routes decision requests using deterministic advisory-only rules.",
         },
     ]
 
@@ -248,3 +254,81 @@ def test_code_review_agent_secrets_win_over_high_risk_escalation():
     )
 
     assert output["recommendation"] == "request_changes"
+
+
+def run_triage_agent(
+    *,
+    question="Should I reduce exposure?",
+    context="Position is concentrated.",
+    decision_type="investment",
+    risk_level="low",
+):
+    agent = TriageAgent()
+    result = agent.run(
+        {
+            "decision_request_id": 1,
+            "question": question,
+            "context": context,
+            "decision_type": decision_type,
+            "risk_level": risk_level,
+        },
+        context=type("Context", (), {"run_id": "test-run"})(),
+    )
+    return result.output
+
+
+def test_triage_agent_empty_question_or_context_rejects_before_high_risk():
+    output = run_triage_agent(
+        question=" ",
+        context="Medical high risk context.",
+        decision_type="investment",
+        risk_level="high",
+    )
+
+    assert output["risk_level"] == "high"
+    assert output["recommendation"] == "reject_request"
+
+
+def test_triage_agent_high_risk_escalates_to_brain():
+    output = run_triage_agent(decision_type="travel", risk_level="high")
+
+    assert output["recommendation"] == "escalate_to_brain"
+
+
+def test_triage_agent_investment_high_risk_escalates_to_brain():
+    output = run_triage_agent(decision_type="investment", risk_level="high")
+
+    assert output["recommendation"] == "escalate_to_brain"
+
+
+def test_triage_agent_investment_low_risk_informational_only_falls_through():
+    output = run_triage_agent(
+        decision_type="investment",
+        risk_level="low",
+        context="This is INFORMATIONAL ONLY and does not require a portfolio action.",
+    )
+
+    assert output["recommendation"] == "handle_locally"
+
+
+def test_triage_agent_engineering_sensitive_keyword_escalates_to_brain():
+    output = run_triage_agent(
+        decision_type="engineering",
+        risk_level="low",
+        question="Should we change deployment settings?",
+        context="Routine backend change.",
+    )
+
+    assert output["recommendation"] == "escalate_to_brain"
+
+
+def test_triage_agent_medium_risk_uses_worker_model():
+    output = run_triage_agent(decision_type="travel", risk_level="medium")
+
+    assert output["recommendation"] == "use_worker_model"
+
+
+def test_triage_agent_low_risk_handles_locally():
+    output = run_triage_agent(decision_type="travel", risk_level="low")
+
+    assert output["recommendation"] == "handle_locally"

@@ -10,6 +10,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from phistyle_platform.registry.registry import list_registered_apps
+from phistyle_platform.runtime.context import AgentRunContext
+from phistyle_platform.runtime.runtime import TriageAgent
 from phistyle_platform.runtime.runtime import list_agents, run_agent
 from phistyle_platform.runtime.types import UnknownAgentError
 from services.llm_router.providers.deepseek import DeepSeekProvider
@@ -31,6 +33,7 @@ from shared.models.knowledge import (
     MemoryImportance,
     StorageBackend,
 )
+from shared.models.triage import TriageRecommendation, TriageResult, TriageRiskLevel
 from shared.services.knowledge_service import (
     create_agent_memory,
     create_decision_log,
@@ -44,6 +47,11 @@ from shared.services.decision_request_service import (
     get_decision_request,
     list_decision_requests,
     update_decision_request_status,
+)
+from shared.services.triage_service import (
+    create_triage_result,
+    list_triage_results,
+    list_triage_results_for_request,
 )
 
 
@@ -161,6 +169,30 @@ class DecisionRequestResponse(BaseModel):
     related_decision_log_id: int | None
     created_at: str
     updated_at: str
+
+
+class TriageRunRequest(BaseModel):
+    decision_request_id: int
+
+
+class TriageOverrideRequest(BaseModel):
+    decision_request_id: int
+    risk_level: TriageRiskLevel
+    recommendation: TriageRecommendation
+    rationale: str
+    flags: str | None = None
+    created_by: str
+
+
+class TriageResultResponse(BaseModel):
+    id: int
+    decision_request_id: int
+    risk_level: TriageRiskLevel
+    recommendation: TriageRecommendation
+    rationale: str
+    flags: str
+    created_by: str
+    created_at: str
 
 
 @app.get("/health")
@@ -316,6 +348,85 @@ def patch_decision_request_status(
     return _decision_request_response(decision_request)
 
 
+@app.get("/decisions/triage", response_model=list[TriageResultResponse])
+def get_triage_results(session: Session = Depends(get_session)) -> list[dict[str, Any]]:
+    return [_triage_result_response(result) for result in list_triage_results(session)]
+
+
+@app.get("/decisions/requests/{decision_request_id}/triage", response_model=list[TriageResultResponse])
+def get_triage_results_for_decision_request(
+    decision_request_id: int,
+    session: Session = Depends(get_session),
+) -> list[dict[str, Any]]:
+    decision_request = get_decision_request(session, decision_request_id)
+    if decision_request is None:
+        raise HTTPException(status_code=404, detail=f"Unknown decision_request_id: {decision_request_id}")
+    return [
+        _triage_result_response(result)
+        for result in list_triage_results_for_request(session, decision_request_id)
+    ]
+
+
+@app.post("/decisions/triage/run", response_model=TriageResultResponse)
+def post_triage_run(
+    request: TriageRunRequest,
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    decision_request = get_decision_request(session, request.decision_request_id)
+    if decision_request is None:
+        raise HTTPException(status_code=404, detail=f"Unknown decision_request_id: {request.decision_request_id}")
+
+    result = TriageAgent().run(
+        {
+            "decision_request_id": decision_request.id,
+            "question": decision_request.question,
+            "context": decision_request.context,
+            "decision_type": decision_request.decision_type.value,
+            "risk_level": decision_request.risk_level.value,
+        },
+        AgentRunContext(run_id=f"triage-{decision_request.id}"),
+    )
+    try:
+        triage_result = create_triage_result(
+            session,
+            decision_request_id=decision_request.id,
+            risk_level=result.output["risk_level"],
+            recommendation=result.output["recommendation"],
+            rationale=result.output["rationale"],
+            flags=result.output["flags"],
+            created_by="triage-agent",
+        )
+    except IntegrityError as exc:
+        session.rollback()
+        raise HTTPException(status_code=400, detail="Foreign key constraint failed") from exc
+    return _triage_result_response(triage_result)
+
+
+@app.post("/decisions/triage/override", response_model=TriageResultResponse)
+def post_triage_override(
+    request: TriageOverrideRequest,
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    if request.created_by == "triage-agent":
+        raise HTTPException(status_code=422, detail="created_by='triage-agent' is reserved for system-run triage")
+    if get_decision_request(session, request.decision_request_id) is None:
+        raise HTTPException(status_code=404, detail=f"Unknown decision_request_id: {request.decision_request_id}")
+    try:
+        triage_result = create_triage_result(
+            session,
+            decision_request_id=request.decision_request_id,
+            risk_level=request.risk_level.value,
+            recommendation=request.recommendation.value,
+            rationale=request.rationale,
+            flags=request.flags,
+            created_by=request.created_by,
+        )
+    except IntegrityError as exc:
+        session.rollback()
+        raise HTTPException(status_code=400, detail="Foreign key constraint failed") from exc
+    return _triage_result_response(triage_result)
+
+
 @app.post("/llm/test")
 def llm_test_endpoint(request: LLMTestRequest) -> dict[str, Any]:
     try:
@@ -400,4 +511,17 @@ def _decision_request_response(decision_request: DecisionRequest) -> dict[str, A
         "related_decision_log_id": decision_request.related_decision_log_id,
         "created_at": decision_request.created_at.isoformat(),
         "updated_at": decision_request.updated_at.isoformat(),
+    }
+
+
+def _triage_result_response(triage_result: TriageResult) -> dict[str, Any]:
+    return {
+        "id": triage_result.id,
+        "decision_request_id": triage_result.decision_request_id,
+        "risk_level": triage_result.risk_level,
+        "recommendation": triage_result.recommendation,
+        "rationale": triage_result.rationale,
+        "flags": triage_result.flags or "",
+        "created_by": triage_result.created_by,
+        "created_at": triage_result.created_at.isoformat(),
     }

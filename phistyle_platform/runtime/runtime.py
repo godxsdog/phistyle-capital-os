@@ -309,6 +309,107 @@ class CodeReviewAgent:
         return [item for item in value if isinstance(item, str)]
 
 
+class TriageAgent:
+    metadata = AgentMetadata(
+        id="triage-agent",
+        name="Triage Agent",
+        role="triage",
+        description="Routes decision requests using deterministic advisory-only rules.",
+    )
+    engineering_escalation_keywords = (
+        "security",
+        "secret",
+        "deployment",
+        "database migration",
+        "trading",
+        "payment",
+    )
+
+    def run(self, input_data: dict[str, Any], context: AgentRunContext) -> AgentRunResult:
+        now = datetime.utcnow()
+        decision_request_id = int(input_data.get("decision_request_id"))
+        question = str(input_data.get("question", ""))
+        request_context = str(input_data.get("context", ""))
+        decision_type = str(input_data.get("decision_type", ""))
+        risk_level = str(input_data.get("risk_level", ""))
+
+        recommendation, rationale, flags = self._triage(
+            question=question,
+            context=request_context,
+            decision_type=decision_type,
+            risk_level=risk_level,
+        )
+        return AgentRunResult(
+            agent_id=self.metadata.id,
+            status="success",
+            output={
+                "decision_request_id": decision_request_id,
+                "risk_level": risk_level,
+                "recommendation": recommendation,
+                "rationale": rationale,
+                "flags": flags,
+            },
+            run_id=context.run_id,
+            started_at=now,
+            finished_at=datetime.utcnow(),
+            metadata={
+                "role": self.metadata.role,
+                "advisory_only": True,
+                "risk_level_passthrough": True,
+            },
+        )
+
+    def _triage(
+        self,
+        *,
+        question: str,
+        context: str,
+        decision_type: str,
+        risk_level: str,
+    ) -> tuple[str, str, list[str]]:
+        if not question.strip() or not context.strip():
+            return (
+                "reject_request",
+                "Question and context are required before triage can classify the request.",
+                ["empty-request"],
+            )
+        if risk_level == "high":
+            return (
+                "escalate_to_brain",
+                "High risk decision requests should be escalated to the future Brain.",
+                [decision_type, "high-risk"],
+            )
+        if decision_type in {"investment", "medical"}:
+            informational_only = risk_level == "low" and "informational only" in context.lower()
+            if not informational_only:
+                return (
+                    "escalate_to_brain",
+                    "Investment and medical decision requests require Brain review unless low-risk and informational only.",
+                    [decision_type],
+                )
+        if decision_type == "engineering" and self._contains_engineering_escalation_keyword(question, context):
+            return (
+                "escalate_to_brain",
+                "Engineering request contains a sensitive operational keyword.",
+                ["engineering", "sensitive-keyword"],
+            )
+        if risk_level == "medium":
+            return (
+                "use_worker_model",
+                "Medium risk request can be prepared by a worker model before any future review.",
+                ["medium-risk"],
+            )
+        return (
+            "handle_locally",
+            "Low risk request can be handled locally.",
+            ["low-risk"],
+        )
+
+    def _contains_engineering_escalation_keyword(self, question: str, context: str) -> bool:
+        haystack = f"{question}\n{context}".lower()
+        return any(keyword in haystack for keyword in self.engineering_escalation_keywords)
+
+
 class AgentRuntime:
     def __init__(self, registry: AgentRegistry | None = None) -> None:
         self.registry = registry or AgentRegistry()
@@ -333,6 +434,7 @@ def create_default_runtime() -> AgentRuntime:
     registry.register(EchoAgent())
     registry.register(DailyBriefAgent())
     registry.register(CodeReviewAgent())
+    registry.register(TriageAgent())
     return AgentRuntime(registry=registry)
 
 
@@ -352,6 +454,7 @@ __all__ = [
     "CodeReviewAgent",
     "DailyBriefAgent",
     "EchoAgent",
+    "TriageAgent",
     "UnknownAgentError",
     "create_default_runtime",
     "default_runtime",
