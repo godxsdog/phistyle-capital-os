@@ -101,6 +101,13 @@ logic is implemented.
   decide.
 - Define Decision Log schema and its relationship to `llm_usage_log`.
 
+### Phase 10A: Brain Orchestrator Scaffold
+- Add deterministic Brain Orchestrator and persisted BrainReview records.
+- Stay pre-Fable and advisory-only.
+- No execution layer exists yet.
+- Rule 0 makes missing triage default to human review; this is a deliberate
+  safety default, not a gap.
+
 ### Phase 11: Brain Review Loop
 - Add structured review loops for strategic Brain decisions.
 

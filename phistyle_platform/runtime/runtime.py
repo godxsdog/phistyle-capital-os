@@ -410,6 +410,111 @@ class TriageAgent:
         return any(keyword in haystack for keyword in self.engineering_escalation_keywords)
 
 
+class BrainOrchestrator:
+    metadata = AgentMetadata(
+        id="brain-orchestrator",
+        name="Brain Orchestrator",
+        role="brain",
+        description="Produces deterministic advisory brain reviews for triaged decisions.",
+    )
+
+    def run(self, input_data: dict[str, Any], context: AgentRunContext) -> AgentRunResult:
+        now = datetime.utcnow()
+        decision_request_id = int(input_data.get("decision_request_id"))
+        triage_result_id = input_data.get("triage_result_id")
+        question = str(input_data.get("question", ""))
+        request_context = str(input_data.get("context", ""))
+        risk_level = str(input_data.get("risk_level", ""))
+        triage_recommendation = input_data.get("triage_recommendation")
+
+        recommendation, rationale, confidence, risks = self._review(
+            triage_result_id=triage_result_id,
+            triage_recommendation=triage_recommendation,
+            question=question,
+            context=request_context,
+            risk_level=risk_level,
+        )
+        return AgentRunResult(
+            agent_id=self.metadata.id,
+            status="success",
+            output={
+                "decision_request_id": decision_request_id,
+                "triage_result_id": triage_result_id,
+                "recommendation": recommendation,
+                "rationale": rationale,
+                "confidence": confidence,
+                "risks": risks,
+                "required_human_approval": True,
+            },
+            run_id=context.run_id,
+            started_at=now,
+            finished_at=datetime.utcnow(),
+            metadata={
+                "role": self.metadata.role,
+                "advisory_only": True,
+                "deterministic_stub": True,
+            },
+        )
+
+    def _review(
+        self,
+        *,
+        triage_result_id: Any,
+        triage_recommendation: Any,
+        question: str,
+        context: str,
+        risk_level: str,
+    ) -> tuple[str, str, str, list[str]]:
+        if triage_result_id is None or triage_recommendation is None:
+            return (
+                "human_review_required",
+                "Triage is required before a brain review can meaningfully proceed.",
+                "high",
+                ["missing-triage"],
+            )
+        if triage_recommendation == "reject_request":
+            return (
+                "reject",
+                "Triage rejected the request, so BrainReview surfaces rejection for human review.",
+                "medium",
+                ["triage-rejected"],
+            )
+        if not question.strip() or not context.strip():
+            return (
+                "request_more_context",
+                "Question and context are required before a useful brain review can proceed.",
+                "high",
+                ["missing-context"],
+            )
+        if triage_recommendation == "escalate_to_brain":
+            return (
+                "human_review_required",
+                "Triage escalated this request to Brain review.",
+                "medium",
+                ["triage-escalated"],
+            )
+        if risk_level == "high":
+            return (
+                "human_review_required",
+                "High risk requests require human review.",
+                "medium",
+                ["high-risk"],
+            )
+        if triage_recommendation == "use_worker_model":
+            return (
+                "defer",
+                "Worker model preparation should happen before final human review.",
+                "medium",
+                ["worker-model-needed"],
+            )
+        return (
+            "proceed",
+            "No deterministic blocker found in this scaffold.",
+            "low",
+            ["low-risk"],
+        )
+
+
 class AgentRuntime:
     def __init__(self, registry: AgentRegistry | None = None) -> None:
         self.registry = registry or AgentRegistry()
@@ -435,6 +540,7 @@ def create_default_runtime() -> AgentRuntime:
     registry.register(DailyBriefAgent())
     registry.register(CodeReviewAgent())
     registry.register(TriageAgent())
+    registry.register(BrainOrchestrator())
     return AgentRuntime(registry=registry)
 
 
@@ -451,6 +557,7 @@ def run_agent(agent_id: str, input_data: dict[str, Any]) -> AgentRunResult:
 
 __all__ = [
     "AgentRuntime",
+    "BrainOrchestrator",
     "CodeReviewAgent",
     "DailyBriefAgent",
     "EchoAgent",

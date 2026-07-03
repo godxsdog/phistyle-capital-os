@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from phistyle_platform.registry.registry import list_registered_apps
 from phistyle_platform.runtime.context import AgentRunContext
+from phistyle_platform.runtime.runtime import BrainOrchestrator
 from phistyle_platform.runtime.runtime import TriageAgent
 from phistyle_platform.runtime.runtime import list_agents, run_agent
 from phistyle_platform.runtime.types import UnknownAgentError
@@ -18,6 +19,7 @@ from services.llm_router.providers.deepseek import DeepSeekProvider
 from services.llm_router.router import resolve_llm_test_route
 from services.llm_router.types import LLMRequest, ModelRole
 from shared.database.session import get_session
+from shared.models.brain_review import BrainReview, BrainReviewConfidence, BrainReviewRecommendation
 from shared.models.decision_request import (
     DecisionRequest,
     DecisionRequestRiskLevel,
@@ -34,6 +36,11 @@ from shared.models.knowledge import (
     StorageBackend,
 )
 from shared.models.triage import TriageRecommendation, TriageResult, TriageRiskLevel
+from shared.services.brain_review_service import (
+    create_brain_review,
+    list_brain_reviews,
+    list_brain_reviews_for_request,
+)
 from shared.services.knowledge_service import (
     create_agent_memory,
     create_decision_log,
@@ -191,6 +198,37 @@ class TriageResultResponse(BaseModel):
     recommendation: TriageRecommendation
     rationale: str
     flags: str
+    created_by: str
+    created_at: str
+
+
+class BrainRunRequest(BaseModel):
+    decision_request_id: int
+    triage_result_id: int | None = None
+
+
+class BrainOverrideRequest(BaseModel):
+    decision_request_id: int
+    triage_result_id: int | None = None
+    recommendation: BrainReviewRecommendation
+    rationale: str
+    confidence: BrainReviewConfidence
+    risks: str | None = None
+    required_human_approval: bool = True
+    proposed_decision_log_id: int | None = None
+    created_by: str
+
+
+class BrainReviewResponse(BaseModel):
+    id: int
+    decision_request_id: int
+    triage_result_id: int | None
+    recommendation: BrainReviewRecommendation
+    rationale: str
+    confidence: BrainReviewConfidence
+    risks: str
+    required_human_approval: bool
+    proposed_decision_log_id: int | None
     created_by: str
     created_at: str
 
@@ -427,6 +465,96 @@ def post_triage_override(
     return _triage_result_response(triage_result)
 
 
+@app.get("/decisions/brain-reviews", response_model=list[BrainReviewResponse])
+def get_brain_reviews(session: Session = Depends(get_session)) -> list[dict[str, Any]]:
+    return [_brain_review_response(review) for review in list_brain_reviews(session)]
+
+
+@app.get("/decisions/requests/{decision_request_id}/brain-reviews", response_model=list[BrainReviewResponse])
+def get_brain_reviews_for_decision_request(
+    decision_request_id: int,
+    session: Session = Depends(get_session),
+) -> list[dict[str, Any]]:
+    decision_request = get_decision_request(session, decision_request_id)
+    if decision_request is None:
+        raise HTTPException(status_code=404, detail=f"Unknown decision_request_id: {decision_request_id}")
+    return [_brain_review_response(review) for review in list_brain_reviews_for_request(session, decision_request_id)]
+
+
+@app.post("/decisions/brain/run", response_model=BrainReviewResponse)
+def post_brain_run(
+    request: BrainRunRequest,
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    decision_request = get_decision_request(session, request.decision_request_id)
+    if decision_request is None:
+        raise HTTPException(status_code=404, detail=f"Unknown decision_request_id: {request.decision_request_id}")
+
+    triage_result = session.get(TriageResult, request.triage_result_id) if request.triage_result_id else None
+    triage_recommendation = triage_result.recommendation.value if triage_result else None
+    triage_result_id = triage_result.id if triage_result else None
+    result = BrainOrchestrator().run(
+        {
+            "decision_request_id": decision_request.id,
+            "triage_result_id": triage_result_id,
+            "question": decision_request.question,
+            "context": decision_request.context,
+            "risk_level": decision_request.risk_level.value,
+            "triage_recommendation": triage_recommendation,
+        },
+        AgentRunContext(run_id=f"brain-{decision_request.id}"),
+    )
+    try:
+        brain_review = create_brain_review(
+            session,
+            decision_request_id=decision_request.id,
+            triage_result_id=result.output["triage_result_id"],
+            recommendation=result.output["recommendation"],
+            rationale=result.output["rationale"],
+            confidence=result.output["confidence"],
+            risks=result.output["risks"],
+            required_human_approval=result.output["required_human_approval"],
+            proposed_decision_log_id=None,
+            created_by="brain-orchestrator",
+        )
+    except IntegrityError as exc:
+        session.rollback()
+        raise HTTPException(status_code=400, detail="Foreign key constraint failed") from exc
+    return _brain_review_response(brain_review)
+
+
+@app.post("/decisions/brain/override", response_model=BrainReviewResponse)
+def post_brain_override(
+    request: BrainOverrideRequest,
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    if request.created_by == "brain-orchestrator":
+        raise HTTPException(status_code=422, detail="created_by='brain-orchestrator' is reserved for system-run reviews")
+    if get_decision_request(session, request.decision_request_id) is None:
+        raise HTTPException(status_code=404, detail=f"Unknown decision_request_id: {request.decision_request_id}")
+    if request.triage_result_id is not None and session.get(TriageResult, request.triage_result_id) is None:
+        raise HTTPException(status_code=404, detail=f"Unknown triage_result_id: {request.triage_result_id}")
+    if request.proposed_decision_log_id is not None and session.get(DecisionLog, request.proposed_decision_log_id) is None:
+        raise HTTPException(status_code=404, detail=f"Unknown proposed_decision_log_id: {request.proposed_decision_log_id}")
+    try:
+        brain_review = create_brain_review(
+            session,
+            decision_request_id=request.decision_request_id,
+            triage_result_id=request.triage_result_id,
+            recommendation=request.recommendation.value,
+            rationale=request.rationale,
+            confidence=request.confidence.value,
+            risks=request.risks,
+            required_human_approval=request.required_human_approval,
+            proposed_decision_log_id=request.proposed_decision_log_id,
+            created_by=request.created_by,
+        )
+    except IntegrityError as exc:
+        session.rollback()
+        raise HTTPException(status_code=400, detail="Foreign key constraint failed") from exc
+    return _brain_review_response(brain_review)
+
+
 @app.post("/llm/test")
 def llm_test_endpoint(request: LLMTestRequest) -> dict[str, Any]:
     try:
@@ -524,4 +652,20 @@ def _triage_result_response(triage_result: TriageResult) -> dict[str, Any]:
         "flags": triage_result.flags or "",
         "created_by": triage_result.created_by,
         "created_at": triage_result.created_at.isoformat(),
+    }
+
+
+def _brain_review_response(brain_review: BrainReview) -> dict[str, Any]:
+    return {
+        "id": brain_review.id,
+        "decision_request_id": brain_review.decision_request_id,
+        "triage_result_id": brain_review.triage_result_id,
+        "recommendation": brain_review.recommendation,
+        "rationale": brain_review.rationale,
+        "confidence": brain_review.confidence,
+        "risks": brain_review.risks or "",
+        "required_human_approval": brain_review.required_human_approval,
+        "proposed_decision_log_id": brain_review.proposed_decision_log_id,
+        "created_by": brain_review.created_by,
+        "created_at": brain_review.created_at.isoformat(),
     }

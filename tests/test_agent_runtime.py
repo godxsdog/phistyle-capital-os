@@ -1,6 +1,6 @@
 import pytest
 
-from phistyle_platform.runtime.runtime import CodeReviewAgent, TriageAgent, create_default_runtime
+from phistyle_platform.runtime.runtime import BrainOrchestrator, CodeReviewAgent, TriageAgent, create_default_runtime
 from phistyle_platform.runtime.types import UnknownAgentError
 from services.llm_router.types import LLMResponse
 
@@ -61,6 +61,12 @@ def test_list_agents_includes_default_agents():
             "name": "Triage Agent",
             "role": "triage",
             "description": "Routes decision requests using deterministic advisory-only rules.",
+        },
+        {
+            "id": "brain-orchestrator",
+            "name": "Brain Orchestrator",
+            "role": "brain",
+            "description": "Produces deterministic advisory brain reviews for triaged decisions.",
         },
     ]
 
@@ -332,3 +338,80 @@ def test_triage_agent_low_risk_handles_locally():
     output = run_triage_agent(decision_type="travel", risk_level="low")
 
     assert output["recommendation"] == "handle_locally"
+
+
+def run_brain_orchestrator(
+    *,
+    triage_result_id=1,
+    triage_recommendation="handle_locally",
+    question="Should we proceed?",
+    context="Context is available.",
+    risk_level="low",
+):
+    agent = BrainOrchestrator()
+    result = agent.run(
+        {
+            "decision_request_id": 1,
+            "triage_result_id": triage_result_id,
+            "question": question,
+            "context": context,
+            "risk_level": risk_level,
+            "triage_recommendation": triage_recommendation,
+        },
+        context=type("Context", (), {"run_id": "test-run"})(),
+    )
+    return result.output
+
+
+def test_brain_orchestrator_missing_triage_uses_rule_zero():
+    output = run_brain_orchestrator(triage_result_id=None, triage_recommendation=None)
+
+    assert output["recommendation"] == "human_review_required"
+    assert output["confidence"] == "high"
+    assert output["required_human_approval"] is True
+
+
+def test_brain_orchestrator_reject_request_wins_over_missing_context():
+    output = run_brain_orchestrator(
+        triage_recommendation="reject_request",
+        context="",
+    )
+
+    assert output["recommendation"] == "reject"
+    assert output["confidence"] == "medium"
+
+
+def test_brain_orchestrator_missing_context_requests_more_context():
+    output = run_brain_orchestrator(context="")
+
+    assert output["recommendation"] == "request_more_context"
+    assert output["confidence"] == "high"
+
+
+def test_brain_orchestrator_escalate_to_brain_requires_human_review():
+    output = run_brain_orchestrator(triage_recommendation="escalate_to_brain")
+
+    assert output["recommendation"] == "human_review_required"
+    assert output["confidence"] == "medium"
+
+
+def test_brain_orchestrator_high_risk_requires_human_review():
+    output = run_brain_orchestrator(risk_level="high")
+
+    assert output["recommendation"] == "human_review_required"
+    assert output["confidence"] == "medium"
+
+
+def test_brain_orchestrator_worker_model_defers():
+    output = run_brain_orchestrator(triage_recommendation="use_worker_model")
+
+    assert output["recommendation"] == "defer"
+    assert output["confidence"] == "medium"
+
+
+def test_brain_orchestrator_clean_low_risk_proceeds_but_still_requires_human_approval():
+    output = run_brain_orchestrator()
+
+    assert output["recommendation"] == "proceed"
+    assert output["confidence"] == "low"
+    assert output["required_human_approval"] is True
