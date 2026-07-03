@@ -35,6 +35,8 @@ The LLM Router exists so apps and agents do not hard-code model names or provide
 | `code_implementation` | Codex |
 | `docs_formatting_summaries` | Mini model |
 | `local_private_data` | Local model only |
+| `cheap_bulk_summary` | Local Ollama first; third-party proxy only for non-sensitive public text |
+| `speculative_serving` | Speculative local serving only when explicitly configured |
 
 The current scaffold returns routing decisions only. It does not execute prompts.
 
@@ -62,6 +64,40 @@ Local DeepSeek can fit as:
 
 The router keeps this future path explicit through the `local_private_data` policy and local provider entries.
 
+## Local Model Serving Roadmap
+
+Local model support should evolve in layers:
+
+| Serving path | Intended use |
+| --- | --- |
+| Ollama | Easiest local model path. Good for early local DeepSeek or Qwen experiments, private summaries, and low-ops development. |
+| vLLM / SGLang | Production local serving path. Better for higher throughput, OpenAI-compatible serving, batching, and GPU-backed deployment. |
+| DeepSpec / DSpark | Future speculative decoding acceleration. Keep this behind explicit configuration until the serving stack is proven. |
+| Third-party cheap DeepSeek API | Allowed only for non-sensitive tasks such as public text summarization, formatting, and low-risk drafts. |
+
+Current provider types include:
+
+- `local_ollama`
+- `local_vllm`
+- `local_sglang`
+- `third_party_proxy`
+- `speculative_serving`
+
+Routing expectations:
+
+- `local_private_data` must route only to `local_ollama` or `local_vllm`.
+- `cheap_bulk_summary` should prefer `local_ollama`; a `third_party_proxy` may be used later only for public, non-sensitive text.
+- `high_risk_architecture` remains Fable/orchestrator only.
+- `speculative_serving` is disabled unless `ENABLE_SPECULATIVE_SERVING=true`.
+
+## Security Notes
+
+- Never send secrets, private repo contents, `.env` files, financial data, or medical data to `third_party_proxy`.
+- Cheap DeepSeek proxy providers can be used only for public text summarization, formatting, or low-risk drafts.
+- Local DeepSeek is preferred for private data.
+- Local model serving does not remove the need for app permissions, audit logs, and data sensitivity checks.
+- Provider config belongs in environment variables. Real API keys must never be committed.
+
 ## Adding New Providers
 
 1. Add provider metadata to `services/llm_router/provider_registry.py`.
@@ -77,4 +113,3 @@ The router keeps this future path explicit through the `local_private_data` poli
 - No prompt execution.
 - No investment logic.
 - No legacy app integration.
-

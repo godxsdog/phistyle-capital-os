@@ -24,12 +24,21 @@ TASK_POLICY: dict[TaskClass, tuple[ModelRole, str, str]] = {
     ),
     TaskClass.LOCAL_PRIVATE_DATA: (
         ModelRole.SUMMARIZER,
-        "local",
-        "Private local data must stay on a local model route.",
+        "local_ollama",
+        "Private local data must stay on local Ollama or local vLLM routes.",
+    ),
+    TaskClass.CHEAP_BULK_SUMMARY: (
+        ModelRole.SUMMARIZER,
+        "local_ollama",
+        "Cheap bulk summaries should prefer local Ollama, with third-party proxy only for non-sensitive public text.",
+    ),
+    TaskClass.SPECULATIVE_SERVING: (
+        ModelRole.DEEP_REASONER,
+        "speculative_serving",
+        "Speculative serving is architecture-only and must be explicitly enabled before execution.",
     ),
 }
 
 
 def policy_for_task(task_class: TaskClass) -> tuple[ModelRole, str, str]:
     return TASK_POLICY[task_class]
-

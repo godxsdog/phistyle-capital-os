@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 from services.llm_router.policies import policy_for_task
 from services.llm_router.provider_registry import get_provider
 from services.llm_router.types import RouteDecision, TaskClass
@@ -12,6 +14,9 @@ class LLMRouter:
         task = TaskClass(task_class)
         role, provider_id, reason = policy_for_task(task)
         provider = get_provider(provider_id)
+        enabled = True
+        if task == TaskClass.SPECULATIVE_SERVING:
+            enabled = os.getenv("ENABLE_SPECULATIVE_SERVING", "false").lower() == "true"
         return RouteDecision(
             task_class=task,
             role=role,
@@ -19,6 +24,7 @@ class LLMRouter:
             model=provider.default_model,
             reason=reason,
             local_only=provider.local_only,
+            enabled=enabled,
         )
 
 
