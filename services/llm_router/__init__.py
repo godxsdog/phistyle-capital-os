@@ -1,0 +1,2 @@
+"""LLM routing architecture scaffold."""
+
