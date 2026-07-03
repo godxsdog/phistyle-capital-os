@@ -7,6 +7,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY backend ./backend
 COPY config ./config
+COPY alembic.ini ./alembic.ini
+COPY migrations ./migrations
 COPY phistyle_platform ./phistyle_platform
 COPY services ./services
 COPY shared ./shared
