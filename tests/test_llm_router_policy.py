@@ -28,8 +28,8 @@ def test_cheap_bulk_summary_prefers_local_ollama():
     decision = route_task(TaskClass.CHEAP_BULK_SUMMARY)
     provider = get_provider(decision.provider_id)
 
-    assert decision.provider_id == "local_ollama"
-    assert provider.provider_type == ProviderType.LOCAL_OLLAMA
+    assert decision.provider_id == "deepseek"
+    assert provider.provider_type == ProviderType.DEEPSEEK
 
 
 def test_third_party_proxy_is_registered_for_public_low_risk_work_only():

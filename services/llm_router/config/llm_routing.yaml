@@ -1,0 +1,108 @@
+role_routes:
+  - match:
+      role: brain
+      risk: high
+    provider: fable
+    model: fable-5
+    max_tokens: 4096
+    reason: High-risk brain work routes to Fable.
+
+  - match:
+      role: worker
+      task: cheap_bulk_summary
+    provider: deepseek
+    model: deepseek-chat
+    max_tokens: 2048
+    reason: Bulk low-risk summaries route to DeepSeek.
+
+  - match:
+      role: worker
+    provider: deepseek
+    model: deepseek-chat
+    max_tokens: 2048
+    reason: Low-risk worker text routes to DeepSeek.
+
+  - match:
+      role: tools
+    provider: local_ollama
+    model: local-deepseek
+    max_tokens: 1024
+    reason: Tool-support traffic defaults local.
+
+  - match:
+      role: "*"
+    provider: deepseek
+    model: deepseek-chat
+    max_tokens: 1024
+    reason: Mandatory fallback route.
+
+routes:
+  high_risk_architecture:
+    role: brain
+    provider: fable
+    model: fable-5
+    max_tokens: 4096
+    reason: High-risk architecture should use Fable as the orchestrator.
+
+  final_decision:
+    role: brain
+    provider: fable
+    model: fable-5
+    max_tokens: 4096
+    reason: Final decisions should use Fable as the orchestrator.
+
+  investment_thesis:
+    role: brain
+    provider: fable
+    model: fable-5
+    max_tokens: 4096
+    reason: Investment thesis work is high-risk and should route to Fable.
+
+  multi_agent_arbitration:
+    role: brain
+    provider: fable
+    model: fable-5
+    max_tokens: 4096
+    reason: Multi-agent arbitration should route to Fable as the final orchestrator.
+
+  complex_reasoning:
+    role: worker
+    provider: deepseek
+    model: deepseek-chat
+    max_tokens: 2048
+    reason: Complex reasoning should start with DeepSeek or an Opus-class model.
+
+  code_implementation:
+    role: worker
+    provider: codex
+    model: codex
+    max_tokens: 4096
+    reason: Implementation work should route to Codex.
+
+  docs_formatting_summaries:
+    role: worker
+    provider: mini
+    model: mini
+    max_tokens: 2048
+    reason: Docs, formatting, and summaries should use a low-cost worker.
+
+  local_private_data:
+    role: tools
+    provider: local_ollama
+    model: local-deepseek
+    max_tokens: 2048
+    reason: Private local data must stay on a local route.
+
+  cheap_bulk_summary:
+    role: worker
+    provider: deepseek
+    model: deepseek-chat
+    max_tokens: 2048
+    reason: Cheap bulk summaries should use DeepSeek as the first real low-risk provider.
+
+  speculative_serving:
+    role: worker
+    provider: speculative_serving
+    model: local-speculative-model
+    max_tokens: 2048
+    reason: Speculative serving must be explicitly enabled before execution.

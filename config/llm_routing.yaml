@@ -1,0 +1,50 @@
+routes:
+  high_risk_architecture:
+    role: orchestrator
+    provider: fable
+    reason: High-risk architecture should use Fable as the orchestrator.
+
+  final_decision:
+    role: orchestrator
+    provider: fable
+    reason: Final decisions should use Fable as the orchestrator.
+
+  investment_thesis:
+    role: orchestrator
+    provider: fable
+    reason: Investment thesis work is high-risk and should route to Fable.
+
+  multi_agent_arbitration:
+    role: orchestrator
+    provider: fable
+    reason: Multi-agent arbitration should route to Fable as the final orchestrator.
+
+  complex_reasoning:
+    role: deep_reasoner
+    provider: deepseek
+    reason: Complex reasoning should start with DeepSeek or an Opus-class model.
+
+  code_implementation:
+    role: coder
+    provider: codex
+    reason: Implementation work should route to Codex.
+
+  docs_formatting_summaries:
+    role: summarizer
+    provider: mini
+    reason: Docs, formatting, and summaries should use a low-cost worker.
+
+  local_private_data:
+    role: summarizer
+    provider: local_ollama
+    reason: Private local data must stay on a local route.
+
+  cheap_bulk_summary:
+    role: summarizer
+    provider: deepseek
+    reason: Cheap bulk summaries should use DeepSeek as the first real low-risk provider.
+
+  speculative_serving:
+    role: deep_reasoner
+    provider: speculative_serving
+    reason: Speculative serving must be explicitly enabled before execution.

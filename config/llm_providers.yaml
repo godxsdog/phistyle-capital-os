@@ -1,0 +1,71 @@
+providers:
+  deepseek:
+    provider_type: deepseek
+    default_model: deepseek-chat
+    api_key_env: DEEPSEEK_API_KEY
+    base_url_env: DEEPSEEK_BASE_URL
+    default_base_url: https://api.deepseek.com
+    wire_api: openai_compatible_chat
+    retry:
+      max_attempts: 2
+      backoff_seconds: 1.0
+      retry_on_status: [429, 500, 502, 503, 504]
+
+  fable:
+    provider_type: fable
+    default_model: fable-5
+    api_key_env: FABLE_API_KEY
+    base_url_env: FABLE_BASE_URL
+    default_base_url: https://api.fable.local
+    wire_api: fable_chat
+    retry:
+      max_attempts: 1
+      backoff_seconds: 0
+      retry_on_status: [429, 500, 502, 503, 504]
+    notes:
+      - adaptive thinking cannot be disabled
+      - thinking blocks must not be inserted into normal conversation history
+      - thinking/reasoning output must be stored separately or discarded
+
+  openai:
+    provider_type: openai
+    default_model: future-openai-model
+    api_key_env: OPENAI_API_KEY
+    base_url_env: OPENAI_BASE_URL
+    default_base_url: https://api.openai.com/v1
+    wire_api: openai_chat
+    retry:
+      max_attempts: 2
+      backoff_seconds: 1.0
+      retry_on_status: [429, 500, 502, 503, 504]
+
+  local_ollama:
+    provider_type: local_ollama
+    default_model: local-deepseek
+    base_url_env: LOCAL_LLM_BASE_URL
+    default_base_url: http://localhost:11434
+    wire_api: ollama_chat
+    retry:
+      max_attempts: 1
+      backoff_seconds: 0
+      retry_on_status: []
+
+  third_party_proxy:
+    provider_type: third_party_proxy
+    default_model: deepseek-proxy
+    api_key_env: THIRD_PARTY_DEEPSEEK_API_KEY
+    base_url_env: THIRD_PARTY_DEEPSEEK_BASE_URL
+    default_base_url:
+    wire_api: openai_compatible_chat
+    retry:
+      max_attempts: 1
+      backoff_seconds: 0
+      retry_on_status: [429, 500, 502, 503, 504]
+    security:
+      allowed_data: public low-risk text only
+      forbidden_data:
+        - secrets
+        - .env
+        - private repo contents
+        - financial data
+        - medical data

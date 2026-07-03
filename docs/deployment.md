@@ -73,10 +73,35 @@ scp scripts/deploy_phistyle.sh kaichanghuang@KaiChangdeMac-mini.local:~/deploy_p
 ssh kaichanghuang@KaiChangdeMac-mini.local "chmod +x ~/deploy_phistyle.sh"
 ```
 
+## Secrets
+
+Real secrets belong in `.env` on the Mac mini only. GitHub should contain only
+placeholder values through `.env.example`.
+
+When real provider adapters are enabled, Docker Compose should load secrets with
+`env_file` instead of committing values into source code:
+
+```yaml
+services:
+  backend:
+    env_file:
+      - .env
+```
+
+See `docs/secrets_management.md` for the full rule.
+
+## Phase 6F CI Placeholder
+
+Before automatic deploy is enabled, CI should run on push and block deploys when
+validation fails:
+
+- run `pytest`;
+- run lint checks;
+- do not deploy if tests fail.
+
 ## Explicit Non-Goals
 
 - Do not implement GitHub Actions yet.
 - Do not modify legacy apps.
 - Do not implement platform features.
 - Do not add app-specific deploy logic until runtime ownership is decided.
-

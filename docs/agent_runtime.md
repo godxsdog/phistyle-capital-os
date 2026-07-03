@@ -25,6 +25,22 @@ The Python package is `phistyle_platform.runtime`. Documentation may still refer
 | --- | --- | --- |
 | `echo-agent` | `test` | Returns the input message with `echo: true`. |
 
+## App and Agent Mapping
+
+The planned App to Agent ownership map lives in `docs/app_agent_mapping.md`.
+Capital, Points Wallet, Dental PPT, Travel, Snowboard, and Shared agents should
+all enter the system through the Agent Runtime instead of bypassing it.
+
+Legacy apps remain references only until a later integration phase.
+
+## Human Approval
+
+No agent may execute real trades without explicit human confirmation.
+
+This rule should be enforced by the Agent Runtime, not by individual agents.
+Early phases are read-only and dry-run only. See `docs/human_approval.md` for the
+full architecture rule.
+
 ## API
 
 ```text
@@ -68,6 +84,7 @@ Response:
 - Add app-scoped execution contexts.
 - Add real scheduling.
 - Add LLM execution adapters behind the LLM Router.
+- Add runtime-level approval gates before any real-world irreversible action.
 
 ## Non-Goals
 
@@ -76,4 +93,3 @@ Response:
 - No background jobs.
 - No legacy app integration.
 - No direct app-private file access.
-

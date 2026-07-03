@@ -2,7 +2,14 @@
 
 Date: 2026-07-03
 
-Status: architecture scaffold only. This does not call real APIs, load API keys, or implement investment logic.
+Status: Router v0 / prototype lineage. This document describes the original LLM
+Router direction and remains active architectural context. It does not mark the
+Phase 2 router as legacy.
+
+Phase 6D is allowed to replace the Phase 2 router internals so the router can
+support providers with different message formats, streaming events, retry rules,
+and reasoning output. The router concept remains the same: business code asks
+for a role or task class, and the router decides how to serve it.
 
 ## Why This Exists
 
@@ -31,6 +38,9 @@ The LLM Router exists so apps and agents do not hard-code model names or provide
 | Task class | Preferred route |
 | --- | --- |
 | `high_risk_architecture` | Fable 5 |
+| `final_decision` | Fable 5 |
+| `investment_thesis` | Fable 5 |
+| `multi_agent_arbitration` | Fable 5 |
 | `complex_reasoning` | DeepSeek or Opus-class model |
 | `code_implementation` | Codex |
 | `docs_formatting_summaries` | Mini model |
@@ -52,6 +62,20 @@ Fable 5 should be reserved for decisions where better reasoning materially chang
 - high-risk final review.
 
 Routine implementation, docs, formatting, low-risk summaries, and boilerplate should route to Codex, Mini, or local workers.
+
+Fable must not be used for:
+
+- summaries;
+- formatting;
+- batch classification;
+- low-risk drafts.
+
+Current Fable routes:
+
+- `high_risk_architecture`;
+- `final_decision`;
+- `investment_thesis`;
+- `multi_agent_arbitration`.
 
 ## Local DeepSeek Later
 
@@ -105,6 +129,11 @@ Routing expectations:
 3. Keep provider credentials in environment variables, never in code.
 4. Add tests that confirm routing decisions without making network calls.
 5. Only later add execution adapters behind the router boundary.
+
+For the hardened provider abstraction introduced in Phase 6D, prefer config
+files and provider adapters over code-level provider branching. Pricing belongs
+in `config/llm_pricing.yaml`; usage records should follow the persistent plan in
+`docs/llm_usage_tracking.md`.
 
 ## Non-Goals
 

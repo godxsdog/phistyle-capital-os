@@ -9,6 +9,7 @@ PROVIDERS: dict[str, Provider] = {
         default_model="fable-5",
         roles=(ModelRole.ORCHESTRATOR, ModelRole.REVIEWER),
         api_key_env="FABLE_API_KEY",
+        base_url_env="FABLE_BASE_URL",
     ),
     "deepseek": Provider(
         id="deepseek",

@@ -1,0 +1,40 @@
+providers:
+  deepseek:
+    max_retries: 2
+    base_delay_seconds: 1.0
+    max_delay_seconds: 8.0
+    backoff_multiplier: 2.0
+    retry_on_status: [429, 500, 502, 503, 504]
+    never_retry_stop_reasons: [refusal]
+
+  fable:
+    max_retries: 1
+    base_delay_seconds: 1.0
+    max_delay_seconds: 5.0
+    backoff_multiplier: 2.0
+    retry_on_status: [429, 500, 502, 503, 504]
+    never_retry_stop_reasons: [refusal]
+
+  openai:
+    max_retries: 2
+    base_delay_seconds: 1.0
+    max_delay_seconds: 8.0
+    backoff_multiplier: 2.0
+    retry_on_status: [429, 500, 502, 503, 504]
+    never_retry_stop_reasons: [refusal]
+
+  local_ollama:
+    max_retries: 0
+    base_delay_seconds: 0
+    max_delay_seconds: 0
+    backoff_multiplier: 1
+    retry_on_status: []
+    never_retry_stop_reasons: [refusal]
+
+  third_party_proxy:
+    max_retries: 1
+    base_delay_seconds: 1.0
+    max_delay_seconds: 5.0
+    backoff_multiplier: 2.0
+    retry_on_status: [429, 500, 502, 503, 504]
+    never_retry_stop_reasons: [refusal]

@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import os
 
+from services.llm_router.config import first_matching_role_route
 from services.llm_router.policies import policy_for_task
 from services.llm_router.provider_registry import get_provider
-from services.llm_router.types import RouteDecision, TaskClass
+from services.llm_router.types import ModelRole, RouteDecision, TaskClass
 
 
 class LLMRouter:
@@ -30,3 +31,30 @@ class LLMRouter:
 
 def route_task(task_class: TaskClass | str) -> RouteDecision:
     return LLMRouter().route(task_class)
+
+
+def provider_id_for_role(role: ModelRole | str) -> str:
+    return route_role(role).provider_id
+
+
+def route_role(role: ModelRole | str, context: dict | None = None) -> RouteDecision:
+    model_role = ModelRole(role)
+    route = first_matching_role_route(model_role.value, context)
+    return RouteDecision(
+        task_class=TaskClass.COMPLEX_REASONING,
+        role=model_role,
+        provider_id=route["provider"],
+        model=route["model"],
+        reason=route["reason"],
+        enabled=True,
+    )
+
+
+def resolve_llm_test_route(route_name: str) -> tuple[ModelRole, str]:
+    try:
+        role = ModelRole(route_name)
+        return role, provider_id_for_role(role)
+    except ValueError:
+        task = TaskClass(route_name)
+        decision = route_task(task)
+        return decision.role, decision.provider_id
