@@ -15,7 +15,7 @@ services:
       context: .
       dockerfile: backend/Dockerfile
     env_file:
-      - .env.example
+      - .env
     environment:
       DATABASE_URL: postgresql+psycopg://phistyle:phistyle@postgres:5432/phistyle_os
     ports:

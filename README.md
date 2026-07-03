@@ -10,3 +10,9 @@ Core principles:
 - Supply-chain transmission
 - Capital flow first
 - Evidence before opinion
+
+## Environment Files
+
+- `.env.example` is committed as the template for required environment values.
+- `.env` is local-only and is loaded by Docker Compose for real runtime secrets.
+- `.env` must never be committed.
