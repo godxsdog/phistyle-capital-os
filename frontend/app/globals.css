@@ -45,6 +45,7 @@ main {
 }
 
 h1,
+h2,
 p {
   margin: 0;
 }
@@ -60,6 +61,11 @@ p {
   font-size: 17px;
   line-height: 1.6;
   max-width: 680px;
+}
+
+h2 {
+  font-size: 24px;
+  letter-spacing: 0;
 }
 
 .status-panel {
@@ -84,3 +90,83 @@ p {
   color: var(--accent);
 }
 
+.app-section {
+  display: grid;
+  gap: 14px;
+}
+
+.section-kicker {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.app-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.app-card {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  padding: 16px;
+  display: grid;
+  gap: 14px;
+}
+
+.app-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.app-card strong,
+.app-card span {
+  display: block;
+}
+
+.app-card strong {
+  font-size: 18px;
+}
+
+.app-card span,
+dt {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.status-pill {
+  border: 1px solid var(--line);
+  padding: 4px 8px;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.status-scaffold {
+  border-color: rgba(15, 118, 110, 0.32);
+  color: var(--accent);
+}
+
+dl {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+
+dt,
+dd {
+  margin: 0;
+}
+
+dd {
+  margin-top: 2px;
+  line-height: 1.4;
+}
+
+@media (max-width: 720px) {
+  .app-grid {
+    grid-template-columns: 1fr;
+  }
+}

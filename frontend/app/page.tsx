@@ -13,8 +13,34 @@ async function getHealth(): Promise<string> {
   }
 }
 
+type AppMetadata = {
+  id: string;
+  name: string;
+  category: string;
+  status: string;
+  sensitivity: string;
+  route: string;
+  health_endpoint: string;
+  owner: string;
+  data_scope: string;
+};
+
+async function getApps(): Promise<AppMetadata[]> {
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+  try {
+    const response = await fetch(`${apiUrl}/apps`, { cache: "no-store" });
+    if (!response.ok) {
+      return [];
+    }
+    return (await response.json()) as AppMetadata[];
+  } catch {
+    return [];
+  }
+}
+
 export default async function Home() {
-  const status = await getHealth();
+  const [status, apps] = await Promise.all([getHealth(), getApps()]);
   const isOk = status === "ok";
 
   return (
@@ -36,8 +62,44 @@ export default async function Home() {
             {status}
           </div>
         </section>
+
+        <section className="app-section" aria-label="Registered apps">
+          <div>
+            <div className="section-kicker">App Registry</div>
+            <h2>Registered apps</h2>
+          </div>
+
+          <div className="app-grid">
+            {apps.map((app) => (
+              <article className="app-card" key={app.id}>
+                <div className="app-card-header">
+                  <div>
+                    <strong>{app.name}</strong>
+                    <span>{app.category}</span>
+                  </div>
+                  <span className={`status-pill status-${app.status}`}>
+                    {app.status}
+                  </span>
+                </div>
+                <dl>
+                  <div>
+                    <dt>Sensitivity</dt>
+                    <dd>{app.sensitivity}</dd>
+                  </div>
+                  <div>
+                    <dt>Owner</dt>
+                    <dd>{app.owner}</dd>
+                  </div>
+                  <div>
+                    <dt>Data scope</dt>
+                    <dd>{app.data_scope}</dd>
+                  </div>
+                </dl>
+              </article>
+            ))}
+          </div>
+        </section>
       </div>
     </main>
   );
 }
-

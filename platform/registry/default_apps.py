@@ -1,0 +1,61 @@
+from platform.registry.types import AppMetadata, AppStatus, Sensitivity
+
+
+DEFAULT_APPS: tuple[AppMetadata, ...] = (
+    AppMetadata(
+        id="capital",
+        name="Capital",
+        category="investment",
+        status=AppStatus.SCAFFOLD,
+        sensitivity=Sensitivity.PERSONAL_FINANCE,
+        route="/apps/capital",
+        health_endpoint="/apps/capital/health",
+        owner="apps/capital",
+        data_scope="portfolio, watchlist, investment events, reports",
+    ),
+    AppMetadata(
+        id="points-wallet",
+        name="Points Wallet",
+        category="travel-finance",
+        status=AppStatus.FUTURE,
+        sensitivity=Sensitivity.PERSONAL_FINANCE,
+        route="/apps/points-wallet",
+        health_endpoint="/apps/points-wallet/health",
+        owner="apps/points-wallet",
+        data_scope="loyalty balances, award costs, expiry reminders",
+    ),
+    AppMetadata(
+        id="dental-ppt",
+        name="Dental PPT",
+        category="medical",
+        status=AppStatus.FUTURE,
+        sensitivity=Sensitivity.MEDICAL,
+        route="/apps/dental-ppt",
+        health_endpoint="/apps/dental-ppt/health",
+        owner="apps/dental-ppt",
+        data_scope="clinical case metadata, images, generated presentations",
+    ),
+    AppMetadata(
+        id="travel",
+        name="Travel",
+        category="travel",
+        status=AppStatus.FUTURE,
+        sensitivity=Sensitivity.TRAVEL,
+        route="/apps/travel",
+        health_endpoint="/apps/travel/health",
+        owner="apps/travel",
+        data_scope="itineraries, award searches, trip operations",
+    ),
+    AppMetadata(
+        id="snowboard",
+        name="Snowboard",
+        category="personal",
+        status=AppStatus.FUTURE,
+        sensitivity=Sensitivity.GENERAL,
+        route="/apps/snowboard",
+        health_endpoint="/apps/snowboard/health",
+        owner="apps/snowboard",
+        data_scope="resort logs, gear, weather, training notes",
+    ),
+)
+

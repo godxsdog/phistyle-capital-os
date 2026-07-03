@@ -2,6 +2,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import os
 
+from platform.registry.registry import list_registered_apps
+
 
 app = FastAPI(title="PhiStyle OS API")
 
@@ -18,4 +20,9 @@ app.add_middleware(
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/apps")
+def apps() -> list[dict[str, str]]:
+    return list_registered_apps()
 
