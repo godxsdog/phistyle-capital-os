@@ -6,6 +6,7 @@ from sqlalchemy import engine_from_config, pool
 from backend.app.core.config import get_settings
 from shared.database.base import Base
 from shared.database import models  # noqa: F401
+from shared.models import knowledge  # noqa: F401
 
 
 config = context.config
@@ -48,4 +49,3 @@ if context.is_offline_mode():
     run_migrations_offline()
 else:
     run_migrations_online()
-

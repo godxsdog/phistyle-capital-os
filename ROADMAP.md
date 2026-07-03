@@ -71,6 +71,13 @@ logic is implemented.
 - Store summaries and future decision context for Brain use.
 - Keep Brain reads summary-first by default.
 
+### Phase 8A: Knowledge / Memory Layer Scaffold
+- Add relational Knowledge / Memory tables and simple create/list endpoints.
+- Stay pre-RAG, pre-embedding, pre-vector-search, and pre-Brain-Orchestrator.
+- NAS support is reference-only through metadata and `file_path`.
+- Active PostgreSQL stays on Mac mini local storage, not NAS, SMB, or network
+  storage.
+
 ### Phase 9: Triage Agent
 - Add low-cost triage before waking the Brain.
 - Resolve how triage escalation relates to Phase 7B's `escalate_to_fable`
