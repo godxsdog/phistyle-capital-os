@@ -117,8 +117,12 @@ logic is implemented.
 - Stay pre-Fable.
 - No migration is expected in this phase.
 
-### Phase 11: Brain Review Loop
-- Add structured review loops for strategic Brain decisions.
+### Phase 11: Human Review / Approval Loop
+- Close the decision-record loop with explicit human approve/reject.
+- Update DecisionLog and DecisionRequest records atomically.
+- Allow one final HumanReview per DecisionLog.
+- Keep approval advisory and record-only.
+- No execution layer exists yet.
 
 ### Phase 12: Capital App Intelligence
 - Begin Capital app intelligence work after the Brain and Memory foundations are

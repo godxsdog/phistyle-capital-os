@@ -35,6 +35,7 @@ from shared.models.knowledge import (
     MemoryImportance,
     StorageBackend,
 )
+from shared.models.human_review import HumanReviewDecision
 from shared.models.triage import TriageRecommendation, TriageResult, TriageRiskLevel
 from shared.services.brain_review_service import (
     create_brain_review,
@@ -54,6 +55,17 @@ from shared.services.knowledge_service import (
     list_agent_memory,
     list_decision_logs,
     list_knowledge_documents,
+)
+from shared.services.human_review_service import (
+    DecisionLogNotFoundError,
+    DecisionLogNotReviewableError,
+    HumanReviewAlreadyExistsError,
+    HumanReviewValidationError,
+    RelatedDecisionRequestMalformedError,
+    RelatedDecisionRequestMissingError,
+    list_human_reviews,
+    list_human_reviews_for_decision_log,
+    review_decision_log,
 )
 from shared.services.decision_request_service import (
     create_decision_request,
@@ -148,6 +160,35 @@ class DecisionLogResponse(BaseModel):
     approved_by: str | None
     status: DecisionStatus
     related_request_id: str | None
+    created_at: str
+
+
+class HumanReviewRequest(BaseModel):
+    reviewer: str | None
+    review_decision: str | None
+    comment: str | None = None
+
+    class Config:
+        extra = "forbid"
+
+
+class HumanReviewDecisionResponse(BaseModel):
+    human_review_id: int
+    decision_log_id: int
+    decision_log_status: str
+    decision_request_id: int
+    decision_request_status: str
+    review_decision: str
+
+
+class HumanReviewResponse(BaseModel):
+    id: int
+    decision_log_id: int
+    decision_request_id: int
+    brain_review_id: int | None
+    reviewer: str
+    review_decision: HumanReviewDecision
+    comment: str | None
     created_at: str
 
 
@@ -345,6 +386,63 @@ def post_knowledge_decision(
         related_request_id=request.related_request_id,
     )
     return _decision_log_response(decision_log)
+
+
+@app.get("/decisions/human-reviews", response_model=list[HumanReviewResponse])
+def get_human_reviews(session: Session = Depends(get_session)) -> list[dict[str, Any]]:
+    return [_human_review_response(review) for review in list_human_reviews(session)]
+
+
+@app.get("/decisions/decision-logs/{decision_log_id}/human-reviews", response_model=list[HumanReviewResponse])
+def get_human_reviews_for_decision_log(
+    decision_log_id: int,
+    session: Session = Depends(get_session),
+) -> list[dict[str, Any]]:
+    return [
+        _human_review_response(review)
+        for review in list_human_reviews_for_decision_log(session, decision_log_id)
+    ]
+
+
+@app.post(
+    "/decisions/decision-logs/{decision_log_id}/human-review",
+    response_model=HumanReviewDecisionResponse,
+)
+def post_human_review(
+    decision_log_id: int,
+    request: HumanReviewRequest,
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    try:
+        result = review_decision_log(
+            session,
+            decision_log_id=decision_log_id,
+            reviewer=request.reviewer,
+            review_decision=request.review_decision,
+            comment=request.comment,
+        )
+    except DecisionLogNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RelatedDecisionRequestMissingError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (
+        HumanReviewValidationError,
+        RelatedDecisionRequestMalformedError,
+    ) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except (
+        DecisionLogNotReviewableError,
+        HumanReviewAlreadyExistsError,
+    ) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {
+        "human_review_id": result.human_review_id,
+        "decision_log_id": result.decision_log_id,
+        "decision_log_status": result.decision_log_status,
+        "decision_request_id": result.decision_request_id,
+        "decision_request_status": result.decision_request_status,
+        "review_decision": result.review_decision,
+    }
 
 
 @app.get("/decisions/requests", response_model=list[DecisionRequestResponse])
@@ -670,6 +768,19 @@ def _decision_log_response(decision_log: DecisionLog) -> dict[str, Any]:
         "status": decision_log.status,
         "related_request_id": decision_log.related_request_id,
         "created_at": decision_log.created_at.isoformat(),
+    }
+
+
+def _human_review_response(human_review) -> dict[str, Any]:
+    return {
+        "id": human_review.id,
+        "decision_log_id": human_review.decision_log_id,
+        "decision_request_id": human_review.decision_request_id,
+        "brain_review_id": human_review.brain_review_id,
+        "reviewer": human_review.reviewer,
+        "review_decision": human_review.review_decision,
+        "comment": human_review.comment,
+        "created_at": human_review.created_at.isoformat(),
     }
 
 

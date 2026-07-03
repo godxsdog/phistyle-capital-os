@@ -10,6 +10,7 @@ from shared.models import knowledge  # noqa: F401
 from shared.models import decision_request  # noqa: F401
 from shared.models import triage  # noqa: F401
 from shared.models import brain_review  # noqa: F401
+from shared.models import human_review  # noqa: F401
 
 
 config = context.config
