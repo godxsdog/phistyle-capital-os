@@ -67,7 +67,11 @@ def test_agents_run_endpoint_runs_daily_brief_agent(monkeypatch):
         return LLMResponse(
             provider_id="deepseek",
             model="deepseek-chat",
-            content="AI infrastructure brief summary.",
+            content=(
+                '{"summary":"AI infrastructure brief summary.",'
+                '"key_points":["Demand remains elevated"],'
+                '"risk_flags":["Supply chain constraints"]}'
+            ),
             dry_run=False,
             metadata={},
         )
@@ -95,8 +99,8 @@ def test_agents_run_endpoint_runs_daily_brief_agent(monkeypatch):
         "output": {
             "topic": "AI infrastructure",
             "summary": "AI infrastructure brief summary.",
-            "key_points": [],
-            "risk_flags": [],
+            "key_points": ["Demand remains elevated"],
+            "risk_flags": ["Supply chain constraints"],
             "source": "manual_input",
         },
     }

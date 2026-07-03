@@ -44,6 +44,20 @@ the first PhiStyle OS agent intended to use the LLM Router summarizer route.
 The agent asks the LLM Router for the `summarizer` role. The current route uses
 DeepSeek through the existing provider adapter path.
 
+The prompt asks the model to return strict JSON:
+
+```json
+{
+  "summary": "...",
+  "key_points": [],
+  "risk_flags": []
+}
+```
+
+If the model response cannot be parsed as JSON, the agent falls back safely:
+`summary` becomes the raw response, while `key_points` and `risk_flags` remain
+empty lists.
+
 Tests mock the provider call. They do not make network requests.
 
 ## Non-Goals
@@ -55,4 +69,3 @@ Tests mock the provider call. They do not make network requests.
 - No scheduling.
 - No Fable calls.
 - No legacy app integration.
-

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from typing import Any
 from uuid import uuid4
@@ -59,21 +60,25 @@ class DailyBriefAgent:
 
         prompt = (
             "Create a concise daily brief from the provided text.\n"
+            "Return strict JSON only, with no markdown, no prose before or after the JSON.\n"
+            "The JSON object must have exactly these keys:\n"
+            '{ "summary": string, "key_points": string[], "risk_flags": string[] }\n'
             f"Topic: {topic}\n\n"
             f"Text:\n{text}\n\n"
-            "Return a short summary, key points, and risk flags."
+            "Keep summary short. Include risk_flags only when the text contains explicit risks."
         )
         llm_response = DeepSeekProvider().chat(
             LLMRequest(role=ModelRole.SUMMARIZER, prompt=prompt)
         )
+        brief = self._parse_brief_response(llm_response.content)
         return AgentRunResult(
             agent_id=self.metadata.id,
             status="success",
             output={
                 "topic": topic,
-                "summary": llm_response.content,
-                "key_points": [],
-                "risk_flags": [],
+                "summary": brief["summary"],
+                "key_points": brief["key_points"],
+                "risk_flags": brief["risk_flags"],
                 "source": "manual_input",
             },
             run_id=context.run_id,
@@ -87,6 +92,39 @@ class DailyBriefAgent:
                 "dry_run": llm_response.dry_run,
             },
         )
+
+    def _parse_brief_response(self, raw_response: str) -> dict[str, Any]:
+        try:
+            parsed = json.loads(raw_response)
+        except json.JSONDecodeError:
+            return self._fallback_brief(raw_response)
+
+        if not isinstance(parsed, dict):
+            return self._fallback_brief(raw_response)
+
+        summary = parsed.get("summary")
+        key_points = parsed.get("key_points")
+        risk_flags = parsed.get("risk_flags")
+        if not isinstance(summary, str):
+            return self._fallback_brief(raw_response)
+
+        return {
+            "summary": summary,
+            "key_points": self._string_list_or_empty(key_points),
+            "risk_flags": self._string_list_or_empty(risk_flags),
+        }
+
+    def _fallback_brief(self, raw_response: str) -> dict[str, Any]:
+        return {
+            "summary": raw_response,
+            "key_points": [],
+            "risk_flags": [],
+        }
+
+    def _string_list_or_empty(self, value: Any) -> list[str]:
+        if not isinstance(value, list):
+            return []
+        return [item for item in value if isinstance(item, str)]
 
 
 class AgentRuntime:
