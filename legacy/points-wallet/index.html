@@ -1,0 +1,480 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#10231f" />
+    <title>Points Wallet</title>
+    <link rel="manifest" href="./manifest.json?v=20" />
+    <link rel="stylesheet" href="./styles.css?v=20" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div>
+          <h1>Points Wallet</h1>
+          <p id="rateStatus">匯率載入中</p>
+        </div>
+        <div class="owner-switch" role="tablist" aria-label="帳戶持有人">
+          <button class="owner-tab active" data-owner="kai" type="button">我</button>
+          <button class="owner-tab" data-owner="wife" type="button">老婆</button>
+        </div>
+      </header>
+
+      <section class="summary-grid" aria-label="總覽">
+        <div class="metric">
+          <span>總點數</span>
+          <strong id="totalPoints">0</strong>
+        </div>
+        <div class="metric">
+          <span>成本估值</span>
+          <strong id="totalCost">TWD 0</strong>
+        </div>
+        <div class="metric warning">
+          <span>180 天內到期</span>
+          <strong id="expiringCount">0</strong>
+        </div>
+      </section>
+
+      <nav class="view-tabs" aria-label="功能切換">
+        <button class="view-tab active" data-view="awardCost" type="button">查票成本</button>
+        <button class="view-tab" data-view="accounts" type="button">帳戶成本</button>
+        <button class="view-tab" data-view="pingan" type="button">平安表格</button>
+        <button class="view-tab" data-view="official" type="button">官網成本</button>
+        <button class="view-tab" data-view="expiry" type="button">到期紀錄</button>
+      </nav>
+
+      <section id="accountsView" class="view">
+        <div class="section-heading">
+          <h2>帳戶成本</h2>
+          <button id="addAccountBtn" class="icon-button" type="button" aria-label="新增帳戶" title="新增帳戶">+</button>
+        </div>
+        <div class="note-block">
+          <strong>直接修改</strong>
+          <p>餘額、成本、到期日都可以直接點欄位修改，離開欄位後會自動儲存。</p>
+        </div>
+        <div id="accountList" class="account-list"></div>
+      </section>
+
+      <section id="calculatorView" class="view">
+        <div class="section-heading">
+          <h2>兌換試算</h2>
+          <button id="saveQuoteBtn" class="primary-button" type="button">儲存試算</button>
+        </div>
+        <form id="quoteForm" class="tool-grid">
+          <label>
+            計畫
+            <select id="quoteProgram"></select>
+          </label>
+          <label>
+            使用點數 / 里程
+            <input id="quotePoints" inputmode="numeric" type="number" min="0" step="100" value="30000" />
+          </label>
+          <label>
+            稅金/附加費
+            <input id="quoteTax" inputmode="decimal" type="number" min="0" step="0.01" value="0" />
+          </label>
+          <label>
+            稅金幣別
+            <select id="quoteCurrency">
+              <option value="TWD">TWD</option>
+              <option value="USD">USD</option>
+              <option value="JPY">JPY</option>
+              <option value="EUR">EUR</option>
+              <option value="GBP">GBP</option>
+              <option value="HKD">HKD</option>
+              <option value="CAD">CAD</option>
+              <option value="AUD">AUD</option>
+            </select>
+          </label>
+          <label>
+            現金價值 / 市價 TWD
+            <input id="cashValue" inputmode="numeric" type="number" min="0" step="100" value="0" />
+          </label>
+          <label>
+            備註
+            <input id="quoteNote" type="text" placeholder="例：TPE-KIX 來回經濟艙" />
+          </label>
+        </form>
+        <div id="quoteResult" class="quote-result"></div>
+        <div id="quoteHistory" class="quote-history"></div>
+      </section>
+
+      <section id="awardCostView" class="view active-view">
+        <div class="section-heading">
+          <h2>里程票成本引擎</h2>
+        </div>
+        <div class="filter-bar">
+          <label><input class="source-filter" data-source="pingan" type="checkbox" checked /> 平安萬里通換算</label>
+          <label><input class="source-filter" data-source="official" type="checkbox" checked /> 官網/特賣購買</label>
+          <label><input class="source-filter" data-source="manual" type="checkbox" checked /> 手 key 成本</label>
+        </div>
+        <details class="search-panel">
+          <summary>Seats.aero 查票</summary>
+          <form class="tool-grid">
+            <label>出發<input id="seatOrigin" maxlength="3" value="TPE" /></label>
+            <label>目的地<input id="seatDestination" maxlength="3" value="NRT" /></label>
+            <label>來源<select id="seatSource">
+              <option value="aeroplan">Aeroplan</option>
+              <option value="united">United</option>
+              <option value="lifemiles">LifeMiles</option>
+              <option value="alaska">Alaska</option>
+            </select></label>
+            <label>開始日期<input id="seatStartDate" type="date" /></label>
+            <label>結束日期<input id="seatEndDate" type="date" /></label>
+            <label>艙等<select id="seatCabins">
+              <option value="economy">經濟艙</option>
+              <option value="premium">豪經</option>
+              <option value="business">商務艙</option>
+              <option value="first">頭等艙</option>
+            </select></label>
+          </form>
+          <button id="seatSearchBtn" class="primary-button" type="button">查 Seats.aero</button>
+          <div id="seatSearchStatus" class="table-status"></div>
+          <div id="seatSearchResults" class="seat-results"></div>
+        </details>
+        <form class="tool-grid">
+          <label>
+            目的地 / 備註
+            <input id="awardTripName" type="text" value="日本東京" />
+          </label>
+          <label>
+            查到的航空計畫
+            <select id="awardProgram"></select>
+          </label>
+          <label>
+            單人所需里程
+            <input id="awardMiles" inputmode="numeric" type="number" min="0" step="500" value="15000" />
+          </label>
+          <label>
+            張數
+            <input id="awardSeats" inputmode="numeric" type="number" min="1" step="1" value="2" />
+          </label>
+          <label>
+            稅金/附加費
+            <input id="awardTax" inputmode="decimal" type="number" min="0" step="0.01" value="0" />
+          </label>
+          <label>
+            稅金幣別
+            <select id="awardCurrency">
+              <option value="TWD">TWD</option>
+              <option value="CNY">CNY</option>
+              <option value="USD">USD</option>
+              <option value="JPY">JPY</option>
+              <option value="EUR">EUR</option>
+              <option value="GBP">GBP</option>
+              <option value="HKD">HKD</option>
+              <option value="CAD">CAD</option>
+              <option value="AUD">AUD</option>
+            </select>
+          </label>
+          <label>
+            現金票價 TWD
+            <input id="awardCashValue" inputmode="numeric" type="number" min="0" step="100" value="0" />
+          </label>
+          <label>
+            壹錢包價格 RMB
+            <input id="oneWalletPrice" inputmode="decimal" type="number" min="0" step="1" value="950" />
+          </label>
+          <label>
+            壹錢包積分
+            <input id="oneWalletPoints" inputmode="numeric" type="number" min="1" step="1000" value="500000" />
+          </label>
+          <label>
+            平安手續費 %
+            <input id="oneWalletFeePct" inputmode="decimal" type="number" min="0" step="0.1" value="4.5" />
+          </label>
+          <label>
+            手動比例：壹錢包點→目標哩
+            <input id="oneWalletToMileRatio" inputmode="decimal" type="number" min="0" step="0.0001" value="0" />
+          </label>
+          <label>
+            活動 Marriott 成本 TWD/點
+            <input id="promoMarriottCost" inputmode="decimal" type="number" min="0" step="0.0001" value="0.2" />
+          </label>
+          <label>
+            Marriott→航空 60k bonus
+            <select id="marriottBonusMode">
+              <option value="bonus">套用 60k +5k</option>
+              <option value="none">不套用 bonus</option>
+            </select>
+          </label>
+        </form>
+        <div class="note-block">
+          <strong>平安萬里通表格</strong>
+          <p id="pinganRuleStatus">平安萬里通規則載入中。</p>
+        </div>
+        <div id="awardCostResult" class="route-list"></div>
+        <div id="programCompareResult" class="compare-panel"></div>
+      </section>
+
+      <section id="pinganView" class="view">
+        <div class="section-heading">
+          <h2>平安萬里通維護表</h2>
+          <div class="button-row">
+            <button id="addPinganRuleBtn" class="secondary-button" type="button">新增規則</button>
+            <button id="savePinganRulesBtn" class="primary-button" type="button">立即儲存</button>
+          </div>
+        </div>
+        <div class="note-block">
+          <strong>維護方式</strong>
+          <p>第一頁只條列成本；第二頁算萬里通取得成本與直轉；第三頁設定萬豪轉航空/飯店比例。</p>
+        </div>
+        <div class="pingan-subtabs">
+          <button class="pingan-subtab active" data-pingan-panel="dashboard" type="button">成本呈現</button>
+          <button class="pingan-subtab" data-pingan-panel="wanlitong" type="button">萬里通成本</button>
+          <button class="pingan-subtab" data-pingan-panel="marriott" type="button">萬豪轉點</button>
+        </div>
+        <div id="pinganDashboard" class="pingan-panel active-pingan-panel">
+          <section class="pingan-dashboard-section">
+            <div class="section-heading compact-heading">
+              <h2>萬豪轉點成本</h2>
+              <span>先讀第三頁設定</span>
+            </div>
+            <div id="pinganMarriottRows" class="cost-line-list"></div>
+          </section>
+          <section class="pingan-dashboard-section">
+            <div class="section-heading compact-heading">
+              <h2>萬里通基本兌換</h2>
+              <span>再讀第二頁設定</span>
+            </div>
+            <div id="pinganDirectRows" class="cost-line-list"></div>
+          </section>
+        </div>
+        <div id="pinganWanlitongPanel" class="pingan-panel">
+          <form class="tool-grid">
+            <label>
+              購買萬里通 RMB
+              <input id="pinganFaceValue" inputmode="decimal" type="number" min="0" step="1" />
+            </label>
+            <label>
+              萬里通積分
+              <input id="pinganWalletPoints" inputmode="numeric" type="number" min="1" step="1000" />
+            </label>
+            <label>
+              CNY 匯率
+              <input id="pinganCnyRate" inputmode="decimal" type="number" min="0" step="0.0001" />
+            </label>
+          </form>
+          <div class="calc-strip">
+            <strong id="pinganPointCost">每 1 萬里通積分 TWD 0.00</strong>
+            <span id="pinganPointCostDetail"></span>
+          </div>
+          <div class="button-row compact-actions">
+            <button id="pinganSelectAllBtn" class="secondary-button" type="button">全選</button>
+            <button id="pinganSelectNoneBtn" class="secondary-button" type="button">全取消</button>
+            <button class="secondary-button" data-save-pingan-preset="1" type="button">存 1</button>
+            <button class="secondary-button" data-apply-pingan-preset="1" type="button">用 1</button>
+            <button class="secondary-button" data-save-pingan-preset="2" type="button">存 2</button>
+            <button class="secondary-button" data-apply-pingan-preset="2" type="button">用 2</button>
+            <button class="secondary-button" data-save-pingan-preset="3" type="button">存 3</button>
+            <button class="secondary-button" data-apply-pingan-preset="3" type="button">用 3</button>
+          </div>
+          <div id="pinganTableStatus" class="table-status"></div>
+          <div class="table-scroll">
+            <table class="rules-table wanlitong-table">
+              <thead>
+                <tr>
+                  <th>首頁</th>
+                  <th>Excel列</th>
+                  <th>計畫 / 來源</th>
+                  <th>加贈比例</th>
+                  <th>萬里通/哩</th>
+                  <th>換算成本</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="pinganRulesBody"></tbody>
+            </table>
+          </div>
+        </div>
+        <div id="pinganMarriottPanel" class="pingan-panel">
+          <form class="tool-grid">
+            <label>
+              萬豪成本來源
+              <select id="marriottCostSource">
+                <option value="wanlitong">自動：萬里通換萬豪</option>
+                <option value="account">帳戶：Marriott 成本</option>
+                <option value="manual">手動輸入</option>
+              </select>
+            </label>
+            <label>
+              手動 Marriott 成本 TWD/點
+              <input id="manualMarriottCost" inputmode="decimal" type="number" min="0" step="0.0001" />
+            </label>
+          </form>
+          <div class="calc-strip">
+            <strong id="marriottBaseCost">萬豪成本 TWD 0.00 / 點</strong>
+            <span id="marriottBaseCostSource">自動抓第二頁「萬里通 → 萬豪」最低成本</span>
+          </div>
+          <div id="marriottRulesStatus" class="table-status"></div>
+          <div class="table-scroll">
+            <table class="rules-table marriott-rules-table">
+              <thead>
+                <tr>
+                  <th>首頁</th>
+                  <th>計畫</th>
+                  <th>類型</th>
+                  <th>60k 可換哩</th>
+                  <th>換算後成本</th>
+                </tr>
+              </thead>
+              <tbody id="marriottRulesBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section id="officialView" class="view">
+        <div class="section-heading">
+          <h2>官網/特賣購買成本</h2>
+          <div class="button-row">
+            <button id="refreshTripplusBtn" class="secondary-button" type="button">刷新 TripPlus</button>
+            <button id="addOfficialCostBtn" class="secondary-button" type="button">新增成本</button>
+            <button id="saveOfficialCostsBtn" class="primary-button" type="button">立即儲存</button>
+          </div>
+        </div>
+        <div class="note-block">
+          <strong>維護方式</strong>
+          <p>TripPlus 若可讀會嘗試刷新；若遇到驗證，就直接在這裡維護各計畫目前特賣每哩成本、加贈與期限。</p>
+        </div>
+        <div id="officialCostStatus" class="table-status"></div>
+        <div class="table-scroll">
+          <table class="rules-table official-table">
+            <thead>
+              <tr>
+                <th>計畫</th>
+                <th>來源</th>
+                <th>每哩成本</th>
+                <th>加贈%</th>
+                <th>期限</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="officialCostsBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="transferView" class="view">
+        <div class="section-heading">
+          <h2>Marriott 轉點換算</h2>
+          <button id="saveTransferBtn" class="primary-button" type="button">儲存換算</button>
+        </div>
+        <form class="tool-grid">
+          <label>
+            Marriott 點數
+            <input id="marriottPoints" inputmode="numeric" type="number" min="0" step="1000" value="60000" />
+          </label>
+          <label>
+            Marriott 每點成本 TWD
+            <input id="marriottCost" inputmode="decimal" type="number" min="0" step="0.0001" value="0.22" />
+          </label>
+          <label>
+            目標計畫
+            <select id="transferTarget"></select>
+          </label>
+          <label>
+            現金價值 / 市價 TWD
+            <input id="transferCashValue" inputmode="numeric" type="number" min="0" step="100" value="0" />
+          </label>
+          <label>
+            兌換稅金
+            <input id="transferTax" inputmode="decimal" type="number" min="0" step="0.01" value="0" />
+          </label>
+          <label>
+            稅金幣別
+            <select id="transferCurrency">
+              <option value="TWD">TWD</option>
+              <option value="USD">USD</option>
+              <option value="JPY">JPY</option>
+              <option value="EUR">EUR</option>
+              <option value="GBP">GBP</option>
+              <option value="HKD">HKD</option>
+              <option value="CAD">CAD</option>
+              <option value="AUD">AUD</option>
+            </select>
+          </label>
+        </form>
+        <div id="transferResult" class="quote-result"></div>
+        <div class="note-block">
+          <strong>規則說明</strong>
+          <p>航空轉點依 Marriott 官方規則：多數計畫 3:1，滿 60,000 Bonvoy 點通常多 5,000 哩；LifeMiles 不適用該 bonus。飯店計畫不是 Marriott 可直接轉點對象，這裡用你設定的 Marriott 成本做等值比較。</p>
+        </div>
+        <div id="transferHistory" class="quote-history"></div>
+      </section>
+
+      <section id="expiryView" class="view">
+        <div class="section-heading">
+          <h2>到期提醒</h2>
+          <button id="exportBtn" class="secondary-button" type="button">匯出 JSON</button>
+        </div>
+        <div id="expiryList" class="expiry-list"></div>
+      </section>
+    </main>
+
+    <dialog id="accountDialog">
+      <form id="accountForm" method="dialog">
+        <div class="dialog-heading">
+          <h2 id="dialogTitle">新增帳戶</h2>
+          <button class="icon-button" value="cancel" type="submit" aria-label="關閉" title="關閉">×</button>
+        </div>
+        <input id="accountId" type="hidden" />
+        <div class="tool-grid">
+          <label>
+            類別
+            <select id="accountCategory">
+              <option value="hotel">飯店</option>
+              <option value="airline">航空</option>
+            </select>
+          </label>
+          <label>
+            計畫
+            <select id="accountProgram"></select>
+          </label>
+          <label>
+            餘額
+            <input id="accountBalance" inputmode="numeric" type="number" min="0" step="1" />
+          </label>
+          <label>
+            每點/每哩成本 TWD
+            <input id="accountCost" inputmode="decimal" type="number" min="0" step="0.0001" />
+          </label>
+          <label>
+            到期日
+            <input id="accountExpiry" type="date" />
+          </label>
+        </div>
+        <div class="dialog-actions">
+          <button id="deleteAccountBtn" class="danger-button" type="button">刪除</button>
+          <button class="primary-button" value="default" type="submit">儲存</button>
+        </div>
+      </form>
+    </dialog>
+
+    <template id="accountTemplate">
+      <article class="account-row">
+        <div class="account-main-fields">
+          <label>類別
+            <select class="account-input" data-field="category">
+              <option value="hotel">飯店</option>
+              <option value="airline">航空</option>
+            </select>
+          </label>
+          <label>計畫
+            <select class="account-input account-program-select" data-field="program"></select>
+          </label>
+        </div>
+        <div class="account-values">
+          <label>餘額<input class="account-input" data-field="balance" inputmode="numeric" type="number" min="0" step="1" /></label>
+          <label>每點成本<input class="account-input" data-field="costPerPoint" inputmode="decimal" type="number" min="0" step="0.01" /></label>
+          <label>到期日<input class="account-input" data-field="expiryDate" type="date" /></label>
+          <span class="cost"></span>
+        </div>
+        <button class="danger-button delete-account-button" type="button">刪除</button>
+      </article>
+    </template>
+
+    <script src="./app.js?v=20"></script>
+  </body>
+</html>

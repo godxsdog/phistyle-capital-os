@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0b3337" />
+    <title>Dental Case Presenter</title>
+    <link rel="stylesheet" href="./styles.css?v=4" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div>
+          <h1>Dental Case Presenter</h1>
+          <p id="statusText">準備建立臨床簡報</p>
+        </div>
+        <button id="generateBtn" class="primary-button" type="button">產生 PPT</button>
+      </header>
+
+      <section class="workspace">
+        <form id="caseForm" class="case-panel">
+          <h2>案例資料</h2>
+          <label>
+            簡報標題
+            <input id="caseTitle" type="text" value="術前術後比對" />
+          </label>
+          <label>
+            患者代碼
+            <input id="patientCode" type="text" placeholder="例：K-2026-0701" />
+          </label>
+          <label>
+            醫師
+            <input id="doctor" type="text" placeholder="例：Dr. Kai Chang" />
+          </label>
+          <label>
+            日期
+            <input id="caseDate" type="date" />
+          </label>
+          <label>
+            治療項目
+            <input id="treatment" type="text" placeholder="例：全口重建 / 植牙 / 矯正 / 美學貼片" />
+          </label>
+          <label>
+            分類
+            <input id="caseType" type="text" value="術前術後比對" />
+          </label>
+          <label class="wide">
+            主訴 / 需求
+            <textarea id="chiefConcern" rows="3"></textarea>
+          </label>
+          <label class="wide">
+            臨床備註
+            <textarea id="clinicalNotes" rows="4"></textarea>
+          </label>
+          <label class="wide">
+            對比頁備註
+            <textarea id="comparisonNotes" rows="3">自動排版：請由醫師確認影像方向、尺度與臨床判讀。</textarea>
+          </label>
+          <label class="wide">
+            結尾備註
+            <textarea id="finalNotes" rows="3"></textarea>
+          </label>
+        </form>
+
+        <section class="upload-panel">
+          <div class="section-heading">
+            <h2>影像資料</h2>
+            <button id="clearBtn" class="secondary-button" type="button">清空影像</button>
+          </div>
+          <div class="upload-grid" id="uploadGrid"></div>
+        </section>
+      </section>
+
+      <section class="evidence-panel">
+        <div class="section-heading">
+          <h2>文獻佐證</h2>
+          <button id="paperSearchBtn" class="secondary-button" type="button">搜尋 PubMed</button>
+        </div>
+        <div class="paper-search">
+          <label>
+            搜尋關鍵字
+            <input id="paperQuery" type="text" placeholder="留空會用治療項目、主訴需求、臨床備註與對比目標自動搜尋" />
+          </label>
+        </div>
+        <div id="paperList" class="paper-list">尚未搜尋文獻。</div>
+      </section>
+
+      <section class="review-panel">
+        <div class="section-heading">
+          <h2>自動配對預覽</h2>
+          <span id="imageCount">0 張影像</span>
+        </div>
+        <div id="pairPreview" class="pair-preview"></div>
+      </section>
+    </main>
+
+    <template id="uploadTemplate">
+      <article class="upload-box">
+        <div>
+          <strong class="box-title"></strong>
+          <span class="box-hint"></span>
+        </div>
+        <div class="drop-zone">
+          <strong>拖拉照片到這裡</strong>
+          <span>可一次放多張</span>
+        </div>
+        <label class="file-button">
+          選擇影像
+          <input class="file-input" type="file" accept="image/*" multiple />
+        </label>
+        <div class="thumb-list"></div>
+      </article>
+    </template>
+
+    <script src="./app.js?v=4"></script>
+  </body>
+</html>
