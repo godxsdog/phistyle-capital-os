@@ -7,6 +7,8 @@ from uuid import uuid4
 from phistyle_platform.runtime.context import AgentRunContext
 from phistyle_platform.runtime.registry import AgentRegistry
 from phistyle_platform.runtime.types import UnknownAgentError
+from services.llm_router.providers.deepseek import DeepSeekProvider
+from services.llm_router.types import LLMRequest, ModelRole
 from shared.models.agent import AgentMetadata
 from shared.models.run import AgentRunResult
 
@@ -39,6 +41,54 @@ class EchoAgent:
         )
 
 
+class DailyBriefAgent:
+    metadata = AgentMetadata(
+        id="daily-brief-agent",
+        name="Daily Brief Agent",
+        role="summarizer",
+        description="Summarizes provided text into a short structured brief.",
+    )
+
+    def run(self, input_data: dict[str, Any], context: AgentRunContext) -> AgentRunResult:
+        now = datetime.utcnow()
+        topic = str(input_data.get("topic", "")).strip()
+        text = str(input_data.get("text", "")).strip()
+        route = context.llm_router.route_role(ModelRole.SUMMARIZER)
+        if route.provider_id != "deepseek":
+            raise RuntimeError(f"Unsupported summarizer provider route: {route.provider_id}")
+
+        prompt = (
+            "Create a concise daily brief from the provided text.\n"
+            f"Topic: {topic}\n\n"
+            f"Text:\n{text}\n\n"
+            "Return a short summary, key points, and risk flags."
+        )
+        llm_response = DeepSeekProvider().chat(
+            LLMRequest(role=ModelRole.SUMMARIZER, prompt=prompt)
+        )
+        return AgentRunResult(
+            agent_id=self.metadata.id,
+            status="success",
+            output={
+                "topic": topic,
+                "summary": llm_response.content,
+                "key_points": [],
+                "risk_flags": [],
+                "source": "manual_input",
+            },
+            run_id=context.run_id,
+            started_at=now,
+            finished_at=datetime.utcnow(),
+            metadata={
+                "role": self.metadata.role,
+                "llm_role": ModelRole.SUMMARIZER.value,
+                "provider_id": llm_response.provider_id,
+                "model": llm_response.model,
+                "dry_run": llm_response.dry_run,
+            },
+        )
+
+
 class AgentRuntime:
     def __init__(self, registry: AgentRegistry | None = None) -> None:
         self.registry = registry or AgentRegistry()
@@ -61,6 +111,7 @@ class AgentRuntime:
 def create_default_runtime() -> AgentRuntime:
     registry = AgentRegistry()
     registry.register(EchoAgent())
+    registry.register(DailyBriefAgent())
     return AgentRuntime(registry=registry)
 
 
@@ -77,6 +128,7 @@ def run_agent(agent_id: str, input_data: dict[str, Any]) -> AgentRunResult:
 
 __all__ = [
     "AgentRuntime",
+    "DailyBriefAgent",
     "EchoAgent",
     "UnknownAgentError",
     "create_default_runtime",
@@ -84,4 +136,3 @@ __all__ = [
     "list_agents",
     "run_agent",
 ]
-

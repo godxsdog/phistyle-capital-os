@@ -28,6 +28,9 @@ class LLMRouter:
             enabled=enabled,
         )
 
+    def route_role(self, role: ModelRole | str, context: dict | None = None) -> RouteDecision:
+        return route_role(role, context)
+
 
 def route_task(task_class: TaskClass | str) -> RouteDecision:
     return LLMRouter().route(task_class)
