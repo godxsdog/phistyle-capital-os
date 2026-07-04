@@ -134,6 +134,15 @@ logic is implemented.
 - Pipeline is idempotent and reuses existing records.
 - Finalized statuses are preserved on repeated runs.
 
+### Phase 13: Capital Decision Dashboard v0
+- Add the first browser UI for the Capital decision workflow.
+- Create Capital decisions from the browser.
+- Explicitly run the existing Phase 12 pipeline.
+- View DecisionRequest, Triage, BrainReview, and DecisionLog stages.
+- Explicitly approve or reject through Phase 11 HumanReview.
+- No live market data, portfolio integration, or real Brain model yet.
+- No execution layer exists.
+
 ## Future Product Phases
 
 These remain future work and should not be started until the platform foundation

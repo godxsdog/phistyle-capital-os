@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 async function getHealth(): Promise<string> {
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -61,6 +63,17 @@ export default async function Home() {
           <div className={`status-value ${isOk ? "status-ok" : ""}`}>
             {status}
           </div>
+        </section>
+
+        <section className="action-band" aria-label="Capital decision dashboard">
+          <div>
+            <div className="section-kicker">Capital</div>
+            <h2>Decision dashboard</h2>
+            <p>Create Capital investment decision records, run the advisory pipeline, and record explicit human review.</p>
+          </div>
+          <Link className="button button-primary" href="/capital/decisions">
+            Capital Decisions
+          </Link>
         </section>
 
         <section className="app-section" aria-label="Registered apps">
