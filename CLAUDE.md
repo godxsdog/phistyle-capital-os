@@ -13,10 +13,10 @@ record-only. Capital is the only active vertical.
 
 ## Current verified state
 
-- Phase 13 (Capital Decision Dashboard v0) complete; deployed to the
-  Mac mini LAN runtime and browser-verified there by the user. This is
-  a home-LAN runtime claim, not a public-production assertion.
-  Latest strategy baseline: commit 844ccd8.
+- Phase 14 (State-Machine Hardening) VERIFIED on the Mac mini LAN
+  runtime (2026-07-05, commit f2cf216): terminal DecisionRequest states
+  are now guarded on all writer paths. Home-LAN runtime claim, not a
+  public-production assertion.
 - Triage and BrainOrchestrator are deterministic stubs (until Phase 15).
 - Knowledge/Memory tables exist but are dormant (until Phase 16).
 - Next approved phase and full roadmap: docs/strategy/current-roadmap.md.
@@ -51,8 +51,8 @@ docs/strategy/fable-codex-operating-model.md.
 13. "Done" alone is not a completion report — use the format in
     docs/strategy/implementation-ticket-standard.md.
 
-Known gap being fixed in Phase 14: the generic status PATCH endpoint
-does not yet enforce invariant 3. Do not build on that endpoint.
+The Phase 14 gap (unguarded status PATCH endpoint) is closed as of
+commit f2cf216; invariant 3 is enforced on all writer paths.
 
 ## Session start (mandatory)
 

@@ -1,6 +1,20 @@
 # Ticket: Phase 14 — State-Machine Hardening
 
 FABLE-APPROVED: yes (2026-07-04)
+VERDICT: ACCEPTED (Fable, 2026-07-05). STATUS: VERIFIED.
+- Implementation: commit f2cf216. Sonnet independent review: 0 BLOCKER,
+  0 HIGH. Target tests: 37 passed (Python 3.12 venv, matching the
+  python:3.12-slim runtime image).
+- Live verification (user, Mac mini runtime): PATCH human_approved→draft
+  on decision 1 returned the 409 guard message; state unchanged.
+- Governance calibration: Fable extra interventions 0; STOPs 0 (false
+  STOPs 0); ticket length proportionate; unanswered-by-ticket Codex
+  questions 0. No governance pruning needed.
+- KNOWN LIMITATIONS carried forward: repo declares no Python version
+  requirement (3.9 breaks on `Mapped[str | None]`; runtime is 3.12) —
+  fold a `.python-version` + README line into the Phase 15 ticket;
+  8 LLM router/provider test failures in Codex's 3.9 session are
+  suspected environment issues — re-check under 3.12 during Phase 15.
 VALID AFTER: the governance adoption commit (CLAUDE.md + docs/strategy/*
 + this ticket) lands on main. Codex must verify per
 docs/strategy/fable-codex-operating-model.md §"proceed without Fable".

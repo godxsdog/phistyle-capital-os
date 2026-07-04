@@ -17,6 +17,10 @@ Design owner and final review owner is Fable for every phase.
 
 ## Phase 14 — State-Machine Hardening
 
+VERDICT: ACCEPTED + VERIFIED (2026-07-05, commit f2cf216; details in
+docs/tickets/phase-14-state-machine-hardening.md). Current phase is now
+Phase 15.
+
 DECISION: Close the final-state downgrade gap before any new capability.
 WHY NOW: Invariants 3–4 ("final states never downgrade") are claimed in
 docs and relied on by tests, but `PATCH /decisions/requests/{id}/status`
