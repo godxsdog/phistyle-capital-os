@@ -48,6 +48,16 @@ from shared.services.brain_decision_link_service import (
     BrainReviewNotFoundError,
     create_decision_log_draft_from_brain_review,
 )
+from shared.services.capital_decision_support_service import (
+    CapitalDecisionRequestNotFoundError,
+    CapitalDecisionRequestScopeError,
+    CapitalDecisionRelatedRecordError,
+    CapitalDecisionValidationError,
+    create_capital_decision_request,
+    get_capital_decision_summary,
+    list_capital_decision_requests,
+    run_capital_decision_pipeline,
+)
 from shared.services.knowledge_service import (
     create_agent_memory,
     create_decision_log,
@@ -225,6 +235,46 @@ class DecisionRequestResponse(BaseModel):
     updated_at: str
 
 
+class CapitalDecisionCreateRequest(BaseModel):
+    question: str | None
+    context: str | None
+    options: str | None
+    risk_level: str
+    created_by: str | None
+
+    class Config:
+        extra = "forbid"
+
+
+class CapitalDecisionCreateResponse(BaseModel):
+    decision_request_id: int
+    app_id: str
+    decision_type: str
+    status: str
+
+
+class CapitalDecisionRunResponse(BaseModel):
+    decision_request_id: int
+    decision_request_status: str
+    triage_result_id: int
+    triage_recommendation: str
+    brain_review_id: int
+    brain_recommendation: str
+    decision_log_id: int
+    decision_log_status: str
+    decision_log_approved_by: str | None
+    requires_human_review: bool
+
+
+class CapitalDecisionSummaryResponse(BaseModel):
+    decision_request: dict[str, Any]
+    triage_result: dict[str, Any] | None
+    brain_review: dict[str, Any] | None
+    decision_log: dict[str, Any] | None
+    human_review: dict[str, Any] | None
+    requires_human_review: bool
+
+
 class TriageRunRequest(BaseModel):
     decision_request_id: int
 
@@ -320,6 +370,80 @@ def run_agent_endpoint(request: AgentRunRequest) -> dict[str, Any]:
         "status": result.status,
         "output": result.output,
     }
+
+
+@app.get("/capital/decisions", response_model=list[DecisionRequestResponse])
+def get_capital_decisions(session: Session = Depends(get_session)) -> list[dict[str, Any]]:
+    return [_decision_request_response(decision_request) for decision_request in list_capital_decision_requests(session)]
+
+
+@app.post("/capital/decisions", response_model=CapitalDecisionCreateResponse)
+def post_capital_decision(
+    request: CapitalDecisionCreateRequest,
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    try:
+        decision_request = create_capital_decision_request(
+            session,
+            question=request.question,
+            context=request.context,
+            options=request.options,
+            risk_level=request.risk_level,
+            created_by=request.created_by,
+        )
+    except CapitalDecisionValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {
+        "decision_request_id": decision_request.id,
+        "app_id": decision_request.app_id,
+        "decision_type": decision_request.decision_type.value,
+        "status": decision_request.status.value,
+    }
+
+
+@app.post("/capital/decisions/{decision_request_id}/run", response_model=CapitalDecisionRunResponse)
+def post_capital_decision_run(
+    decision_request_id: int,
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    try:
+        result = run_capital_decision_pipeline(session, decision_request_id=decision_request_id)
+    except CapitalDecisionRequestNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (
+        CapitalDecisionRequestScopeError,
+        CapitalDecisionRelatedRecordError,
+        BrainReviewDecisionLogLinkStaleError,
+    ) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "decision_request_id": result.decision_request_id,
+        "decision_request_status": result.decision_request_status,
+        "triage_result_id": result.triage_result_id,
+        "triage_recommendation": result.triage_recommendation,
+        "brain_review_id": result.brain_review_id,
+        "brain_recommendation": result.brain_recommendation,
+        "decision_log_id": result.decision_log_id,
+        "decision_log_status": result.decision_log_status,
+        "decision_log_approved_by": result.decision_log_approved_by,
+        "requires_human_review": result.requires_human_review,
+    }
+
+
+@app.get("/capital/decisions/{decision_request_id}", response_model=CapitalDecisionSummaryResponse)
+def get_capital_decision(
+    decision_request_id: int,
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    try:
+        summary = get_capital_decision_summary(session, decision_request_id=decision_request_id)
+    except CapitalDecisionRequestNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except CapitalDecisionRequestScopeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except CapitalDecisionRelatedRecordError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _capital_decision_summary_response(summary)
 
 
 @app.get("/knowledge/documents", response_model=list[KnowledgeDocumentResponse])
@@ -768,6 +892,52 @@ def _decision_log_response(decision_log: DecisionLog) -> dict[str, Any]:
         "status": decision_log.status,
         "related_request_id": decision_log.related_request_id,
         "created_at": decision_log.created_at.isoformat(),
+    }
+
+
+def _capital_decision_summary_response(summary) -> dict[str, Any]:
+    decision_request = summary.decision_request
+    triage_result = summary.triage_result
+    brain_review = summary.brain_review
+    decision_log = summary.decision_log
+    human_review = summary.human_review
+    return {
+        "decision_request": {
+            "id": decision_request.id,
+            "question": decision_request.question,
+            "context": decision_request.context,
+            "options": decision_request.options,
+            "risk_level": decision_request.risk_level.value,
+            "status": decision_request.status.value,
+        },
+        "triage_result": None
+        if triage_result is None
+        else {
+            "id": triage_result.id,
+            "recommendation": triage_result.recommendation.value,
+        },
+        "brain_review": None
+        if brain_review is None
+        else {
+            "id": brain_review.id,
+            "recommendation": brain_review.recommendation.value,
+            "confidence": brain_review.confidence.value,
+        },
+        "decision_log": None
+        if decision_log is None
+        else {
+            "id": decision_log.id,
+            "status": decision_log.status.value,
+            "approved_by": decision_log.approved_by,
+        },
+        "human_review": None
+        if human_review is None
+        else {
+            "id": human_review.id,
+            "reviewer": human_review.reviewer,
+            "review_decision": human_review.review_decision.value,
+        },
+        "requires_human_review": summary.requires_human_review,
     }
 
 

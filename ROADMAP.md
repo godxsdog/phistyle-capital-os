@@ -124,9 +124,15 @@ logic is implemented.
 - Keep approval advisory and record-only.
 - No execution layer exists yet.
 
-### Phase 12: Capital App Intelligence
-- Begin Capital app intelligence work after the Brain and Memory foundations are
-  clear.
+### Phase 12: Capital Decision Support v0
+- Add the first usable vertical app over the generic decision system.
+- Create Capital investment DecisionRequests.
+- Explicitly run DecisionRequest -> Triage -> BrainReview -> DecisionLog Draft.
+- Stop before HumanReview; HumanReview remains explicit.
+- No live market data, portfolio sync, or real investment intelligence yet.
+- No execution layer exists.
+- Pipeline is idempotent and reuses existing records.
+- Finalized statuses are preserved on repeated runs.
 
 ## Future Product Phases
 
