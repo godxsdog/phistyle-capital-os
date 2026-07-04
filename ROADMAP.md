@@ -1,5 +1,10 @@
 # Roadmap
 
+> SUPERSEDED for Phases 14+ by `docs/strategy/current-roadmap.md`
+> (Fable G0 session, 2026-07-04). This file is retained as the
+> historical record of Phases 1–13. "Future Product Phases" below is no
+> longer the authoritative sequencing.
+
 ## Current Platform Phases
 
 PhiStyle OS is moving in platform-first phases before any investment-specific
