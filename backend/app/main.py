@@ -78,6 +78,7 @@ from shared.services.human_review_service import (
     review_decision_log,
 )
 from shared.services.decision_request_service import (
+    DecisionRequestStatusTransitionError,
     create_decision_request,
     get_decision_request,
     list_decision_requests,
@@ -618,11 +619,14 @@ def patch_decision_request_status(
     request: DecisionRequestStatusRequest,
     session: Session = Depends(get_session),
 ) -> dict[str, Any]:
-    decision_request = update_decision_request_status(
-        session,
-        decision_request_id=decision_request_id,
-        status=request.status.value,
-    )
+    try:
+        decision_request = update_decision_request_status(
+            session,
+            decision_request_id=decision_request_id,
+            status=request.status.value,
+        )
+    except DecisionRequestStatusTransitionError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     if decision_request is None:
         raise HTTPException(status_code=404, detail=f"Unknown decision_request_id: {decision_request_id}")
     return _decision_request_response(decision_request)

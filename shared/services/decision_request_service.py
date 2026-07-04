@@ -12,6 +12,21 @@ from shared.models.decision_request import (
 )
 
 
+TERMINAL_STATUSES = {
+    DecisionRequestStatus.HUMAN_APPROVED,
+    DecisionRequestStatus.REJECTED,
+    DecisionRequestStatus.ARCHIVED,
+}
+ALLOWED_TERMINAL_TRANSITIONS = {
+    (DecisionRequestStatus.HUMAN_APPROVED, DecisionRequestStatus.ARCHIVED),
+    (DecisionRequestStatus.REJECTED, DecisionRequestStatus.ARCHIVED),
+}
+
+
+class DecisionRequestStatusTransitionError(ValueError):
+    pass
+
+
 def create_decision_request(
     session: Session,
     *,
@@ -62,13 +77,30 @@ def update_decision_request_status(
     decision_request = get_decision_request(session, decision_request_id)
     if decision_request is None:
         return None
-    decision_request.status = DecisionRequestStatus(status)
+    requested_status = DecisionRequestStatus(status)
+    _validate_status_transition(decision_request.status, requested_status)
+    decision_request.status = requested_status
     session.commit()
     session.refresh(decision_request)
     return decision_request
 
 
+def _validate_status_transition(
+    current_status: DecisionRequestStatus,
+    requested_status: DecisionRequestStatus,
+) -> None:
+    if current_status == requested_status:
+        return
+    if current_status not in TERMINAL_STATUSES:
+        return
+    if (current_status, requested_status) in ALLOWED_TERMINAL_TRANSITIONS:
+        return
+    raise DecisionRequestStatusTransitionError(
+        f"Cannot transition DecisionRequest status from {current_status.value} to {requested_status.value}; "
+        "terminal statuses allow only same-status no-op or human_approved/rejected -> archived."
+    )
+
+
 def _validate_app_id(app_id: str) -> None:
     if default_registry.get_app(app_id) is None:
         raise ValueError(f"Unknown app_id: {app_id}")
-

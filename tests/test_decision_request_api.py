@@ -100,6 +100,36 @@ def test_update_status_allows_skip_ahead_transition():
     assert response.json()["status"] == "human_approved"
 
 
+def test_patch_human_approved_to_draft_returns_409_and_preserves_state():
+    client = make_client()
+    created = client.post("/decisions/requests", json=request_payload(status="human_approved")).json()
+
+    response = client.patch(
+        f"/decisions/requests/{created['id']}/status",
+        json={"status": "draft"},
+    )
+    unchanged = client.get(f"/decisions/requests/{created['id']}")
+
+    assert response.status_code == 409
+    assert "human_approved" in response.json()["detail"]
+    assert "draft" in response.json()["detail"]
+    assert unchanged.status_code == 200
+    assert unchanged.json()["status"] == "human_approved"
+
+
+def test_patch_human_approved_to_archived_returns_200():
+    client = make_client()
+    created = client.post("/decisions/requests", json=request_payload(status="human_approved")).json()
+
+    response = client.patch(
+        f"/decisions/requests/{created['id']}/status",
+        json={"status": "archived"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "archived"
+
+
 def test_invalid_decision_type_rejected():
     client = make_client()
 
@@ -184,4 +214,3 @@ def test_decision_request_endpoints_do_not_call_llm_or_network(monkeypatch):
     response = client.post("/decisions/requests", json=request_payload())
 
     assert response.status_code == 200
-
