@@ -231,6 +231,17 @@ CONFIDENCE: LOW (may be merged into 18/19 or dropped).
 - EXECUTION LAYER: not on this roadmap at all. Preconditions in
   system-strategy.md §5.
 
+## Governance calibration checkpoint (after Phase 14 and 15 verdicts)
+
+At each of the first two phase verdicts, Fable records four numbers in
+the verdict: Fable interventions beyond ticket-approval + final-verdict
+(target: 0), STOP reports filed and how many were false STOPs (work the
+ticket actually settled), ticket length vs. risk, and Codex questions
+that the ticket should have answered. If interventions > 2 or false
+STOPs appear, run a governance-pruning pass BEFORE the next phase:
+delete or relax rules; do not add new ones. This is a checkpoint inside
+existing phases, not a phase.
+
 ## Reassessment triggers
 
 Re-open sequencing (a Fable session) if: Phase 16 has no viable data
