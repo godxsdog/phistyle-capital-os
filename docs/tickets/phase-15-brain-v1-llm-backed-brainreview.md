@@ -2,9 +2,15 @@
 
 FABLE-APPROVED: yes (2026-07-05)
 
-FINAL VERDICT: ACCEPTED (Fable, 2026-07-06; commits 3bef0ca + 08e3a12).
-STATUS: IMPLEMENTED — awaiting user deploy + migration 0007 + live
-manual verification to become VERIFIED.
+FINAL VERDICT: ACCEPTED (Fable, 2026-07-06; commits 3bef0ca + 08e3a12
++ 958780a migration-id fix). STATUS: VERIFIED (2026-07-06): deployed to
+Mac mini, migration 0007_brain_review_llm_meta applied cleanly (first
+attempt failed on >32-char revision id, rolled back transactionally,
+renamed, reapplied), live decision #3 (台指期 swing question) returned
+llm_backed=true, provider=deepseek, model=deepseek-chat,
+fallback=null, floor_applied=false. Fable review-miss recorded: the
+revision-id length was reviewable in round 1 and missed; rule added to
+implementation-ticket-standard §9.
 - Round 1: Sonnet review found 1 BLOCKER (comma-in-LLM-risks → live
   500) + 1 LOW → FIX_REQUIRED. Round 2 fix verified by Fable directly
   (3-file diff, proportionate): sanitize commas→semicolons post-

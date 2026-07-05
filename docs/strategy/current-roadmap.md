@@ -32,9 +32,9 @@ states are now guarded on all writer paths.)
 
 ## Phase 15 — Brain v1: LLM-Backed BrainReview (advisory)
 
-STATUS: ticket approved
-(docs/tickets/phase-15-brain-v1-llm-backed-brainreview.md). Unchanged
-by the redirect. Establishes the runtime LLM pattern (strict JSON
+VERDICT: ACCEPTED + VERIFIED (2026-07-06; details in
+docs/tickets/phase-15-brain-v1-llm-backed-brainreview.md). Current
+phase is now Phase 16. Unchanged by the redirect. Establishes the runtime LLM pattern (strict JSON
 contract, deterministic floor, fallback, llm_backed observability)
 that Phases 18–19 reuse for trade-plan critique. All original scope,
 invariants, and acceptance criteria stand as written in the ticket.

@@ -15,12 +15,13 @@ record-only. Capital is the only active vertical.
 
 ## Current verified state
 
-- Phase 14 (State-Machine Hardening) VERIFIED on the Mac mini LAN
-  runtime (2026-07-05, commit f2cf216): terminal DecisionRequest states
-  are now guarded on all writer paths. Home-LAN runtime claim, not a
-  public-production assertion.
-- Triage and BrainOrchestrator are deterministic stubs (until Phase 15).
-- Knowledge/Memory tables exist but are dormant (until Phase 16).
+- Phase 15 (LLM-Backed BrainReview) VERIFIED on the Mac mini LAN
+  runtime (2026-07-06): BrainReview is DeepSeek-backed with a
+  deterministic floor and fallback; llm_backed observability live.
+  Phase 14 (terminal-state guards) VERIFIED 2026-07-05 (f2cf216).
+  Home-LAN runtime claims, not public-production assertions.
+- Triage stays deterministic by design. Knowledge/Memory tables remain
+  dormant (until Phase 16+).
 - Next approved phase and full roadmap: docs/strategy/current-roadmap.md.
 
 ## Operating hierarchy
