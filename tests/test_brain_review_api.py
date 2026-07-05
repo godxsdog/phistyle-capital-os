@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 
@@ -10,6 +12,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from backend.app.main import app, get_session
+from services.llm_router.types import LLMResponse
 from shared.database.base import Base
 from shared.models import brain_review, decision_request, knowledge, triage  # noqa: F401
 
@@ -48,6 +51,20 @@ def clear_dependency_overrides():
     app.dependency_overrides.clear()
 
 
+@pytest.fixture(autouse=True)
+def default_deepseek_dry_run(monkeypatch):
+    def mock_chat(self, request):
+        return LLMResponse(
+            provider_id="deepseek",
+            model="deepseek-chat",
+            content="[dry-run:deepseek] missing api key",
+            dry_run=True,
+            metadata={},
+        )
+
+    monkeypatch.setattr("phistyle_platform.runtime.runtime.DeepSeekProvider.chat", mock_chat)
+
+
 def request_payload(**overrides):
     payload = {
         "app_id": "capital",
@@ -83,6 +100,23 @@ def create_triage_result(client, request_id, recommendation="escalate_to_brain")
     )
     assert response.status_code == 200
     return response.json()
+
+
+def valid_brain_review_response(**overrides):
+    payload = {
+        "recommendation": "human_review_required",
+        "rationale": "LLM-generated rationale.",
+        "confidence": "high",
+        "risks": ["concentration"],
+    }
+    payload.update(overrides)
+    return LLMResponse(
+        provider_id="deepseek",
+        model="deepseek-reasoner",
+        content=json.dumps(payload),
+        dry_run=False,
+        metadata={},
+    )
 
 
 def test_brain_run_without_triage_uses_rule_zero():
@@ -168,6 +202,56 @@ def test_brain_review_lists_for_request_and_deterministic_rules_do_not_set_decis
     assert created["proposed_decision_log_id"] is None
     assert client.get("/decisions/brain-reviews").json()[0]["id"] == created["id"]
     assert client.get(f"/decisions/requests/{request['id']}/brain-reviews").json()[0]["id"] == created["id"]
+
+
+def test_brain_run_response_includes_llm_metadata_fields(monkeypatch):
+    client = make_client()
+    request = create_decision_request(client, risk_level="low", decision_type="travel")
+    triage_result = create_triage_result(client, request["id"], recommendation="handle_locally")
+
+    monkeypatch.setattr(
+        "phistyle_platform.runtime.runtime.DeepSeekProvider.chat",
+        lambda self, request: valid_brain_review_response(recommendation="defer"),
+    )
+
+    response = client.post(
+        "/decisions/brain/run",
+        json={"decision_request_id": request["id"], "triage_result_id": triage_result["id"]},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["recommendation"] == "defer"
+    assert body["llm_backed"] is True
+    assert body["llm_provider"] == "deepseek"
+    assert body["llm_model"] == "deepseek-reasoner"
+    assert body["llm_fallback_reason"] is None
+    assert body["llm_floor_applied"] is False
+
+
+def test_brain_override_records_non_llm_metadata_defaults():
+    client = make_client()
+    request = create_decision_request(client)
+
+    response = client.post(
+        "/decisions/brain/override",
+        json={
+            "decision_request_id": request["id"],
+            "recommendation": "human_review_required",
+            "rationale": "Manual review.",
+            "confidence": "medium",
+            "required_human_approval": True,
+            "created_by": "human",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["llm_backed"] is False
+    assert body["llm_provider"] is None
+    assert body["llm_model"] is None
+    assert body["llm_fallback_reason"] is None
+    assert body["llm_floor_applied"] is False
 
 
 def test_brain_override_rejects_reserved_created_by():
@@ -288,4 +372,3 @@ def test_brain_review_does_not_change_decision_request_status_or_trigger_actions
     assert response.json()["recommendation"] == "proceed"
     unchanged = client.get(f"/decisions/requests/{request['id']}")
     assert unchanged.json()["status"] == "submitted"
-

@@ -4,6 +4,8 @@ AI-first investment operating system.
 
 Goal: identify events that materially change investment decisions, not summarize all news.
 
+Runtime expects Python >=3.10; the local development venv and backend image use Python 3.12.
+
 Core principles:
 - AI infrastructure first
 - CapEx driven

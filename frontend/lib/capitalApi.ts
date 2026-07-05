@@ -85,6 +85,11 @@ export type CapitalDecisionSummary = {
     id: number;
     recommendation: string;
     confidence: string;
+    llm_backed: boolean | null;
+    llm_provider: string | null;
+    llm_model: string | null;
+    llm_fallback_reason: string | null;
+    llm_floor_applied: boolean | null;
   };
   decision_log: null | {
     id: number;

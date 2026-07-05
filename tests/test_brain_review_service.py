@@ -72,3 +72,29 @@ def test_create_list_and_latest_brain_review():
     assert get_latest_brain_review_for_request(session, request.id).id == second.id
     assert first.risks == "concentration,market-volatility"
 
+
+def test_create_brain_review_persists_optional_llm_metadata():
+    session = make_session()
+    request = create_request(session)
+
+    review = create_brain_review(
+        session,
+        decision_request_id=request.id,
+        recommendation="human_review_required",
+        rationale="LLM-backed review.",
+        confidence="high",
+        risks=["concentration"],
+        required_human_approval=True,
+        created_by="brain-orchestrator",
+        llm_backed=True,
+        llm_provider="deepseek",
+        llm_model="deepseek-reasoner",
+        llm_fallback_reason=None,
+        llm_floor_applied=False,
+    )
+
+    assert review.llm_backed is True
+    assert review.llm_provider == "deepseek"
+    assert review.llm_model == "deepseek-reasoner"
+    assert review.llm_fallback_reason is None
+    assert review.llm_floor_applied is False

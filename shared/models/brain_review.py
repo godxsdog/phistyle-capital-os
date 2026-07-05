@@ -45,10 +45,14 @@ class BrainReview(Base):
     )
     risks: Mapped[str | None] = mapped_column(Text, nullable=True)
     required_human_approval: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    llm_backed: Mapped[bool | None] = mapped_column(Boolean, nullable=True, default=False)
+    llm_provider: Mapped[str | None] = mapped_column(Text, nullable=True)
+    llm_model: Mapped[str | None] = mapped_column(Text, nullable=True)
+    llm_fallback_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    llm_floor_applied: Mapped[bool | None] = mapped_column(Boolean, nullable=True, default=False)
     proposed_decision_log_id: Mapped[int | None] = mapped_column(
         ForeignKey("decision_log.id", ondelete="SET NULL"),
         nullable=True,
     )
     created_by: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-

@@ -172,6 +172,7 @@ export default function CapitalDecisionDetailPage() {
                         ["ID", String(summary.brain_review.id)],
                         ["Recommendation", summary.brain_review.recommendation],
                         ["Confidence", summary.brain_review.confidence],
+                        ["LLM status", brainReviewLlmStatus(summary.brain_review)],
                       ]}
                     />
                     <p className="subtle">BrainReview remains advisory.</p>
@@ -321,6 +322,13 @@ function DataGrid({ items }: { items: Array<[string, string]> }) {
 
 function PendingText() {
   return <p className="pending-text">Pending</p>;
+}
+
+function brainReviewLlmStatus(summary: NonNullable<CapitalDecisionSummary["brain_review"]>): string {
+  if (summary.llm_backed) {
+    return summary.llm_model ? `LLM-backed (${summary.llm_model})` : "LLM-backed";
+  }
+  return `deterministic fallback: ${summary.llm_fallback_reason || "not run"}`;
 }
 
 function stageForDecisionRequest(status: string): "pending" | "completed" | "approved" | "rejected" {

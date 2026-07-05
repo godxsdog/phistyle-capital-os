@@ -326,6 +326,11 @@ class BrainReviewResponse(BaseModel):
     confidence: BrainReviewConfidence
     risks: str
     required_human_approval: bool
+    llm_backed: bool | None
+    llm_provider: str | None
+    llm_model: str | None
+    llm_fallback_reason: str | None
+    llm_floor_applied: bool | None
     proposed_decision_log_id: int | None
     created_by: str
     created_at: str
@@ -761,6 +766,11 @@ def post_brain_run(
             risks=result.output["risks"],
             required_human_approval=result.output["required_human_approval"],
             proposed_decision_log_id=None,
+            llm_backed=result.output["llm_backed"],
+            llm_provider=result.output["llm_provider"],
+            llm_model=result.output["llm_model"],
+            llm_fallback_reason=result.output["llm_fallback_reason"],
+            llm_floor_applied=result.output["llm_floor_applied"],
             created_by="brain-orchestrator",
         )
     except IntegrityError as exc:
@@ -926,6 +936,11 @@ def _capital_decision_summary_response(summary) -> dict[str, Any]:
             "id": brain_review.id,
             "recommendation": brain_review.recommendation.value,
             "confidence": brain_review.confidence.value,
+            "llm_backed": brain_review.llm_backed,
+            "llm_provider": brain_review.llm_provider,
+            "llm_model": brain_review.llm_model,
+            "llm_fallback_reason": brain_review.llm_fallback_reason,
+            "llm_floor_applied": brain_review.llm_floor_applied,
         },
         "decision_log": None
         if decision_log is None
@@ -999,6 +1014,11 @@ def _brain_review_response(brain_review: BrainReview) -> dict[str, Any]:
         "confidence": brain_review.confidence,
         "risks": brain_review.risks or "",
         "required_human_approval": brain_review.required_human_approval,
+        "llm_backed": brain_review.llm_backed,
+        "llm_provider": brain_review.llm_provider,
+        "llm_model": brain_review.llm_model,
+        "llm_fallback_reason": brain_review.llm_fallback_reason,
+        "llm_floor_applied": brain_review.llm_floor_applied,
         "proposed_decision_log_id": brain_review.proposed_decision_log_id,
         "created_by": brain_review.created_by,
         "created_at": brain_review.created_at.isoformat(),

@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+import json
 
 import pytest
 
@@ -9,6 +10,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from services.llm_router.types import LLMResponse
 from shared.database.base import Base
 from shared.models import brain_review, decision_request, human_review, knowledge, triage  # noqa: F401
 from shared.models.brain_review import BrainReview
@@ -30,6 +32,20 @@ from shared.services.decision_request_service import create_decision_request
 from shared.services.human_review_service import list_human_reviews, review_decision_log
 from shared.services.knowledge_service import create_decision_log
 from shared.services.triage_service import create_triage_result
+
+
+@pytest.fixture(autouse=True)
+def default_deepseek_dry_run(monkeypatch):
+    def mock_chat(self, request):
+        return LLMResponse(
+            provider_id="deepseek",
+            model="deepseek-chat",
+            content="[dry-run:deepseek] missing api key",
+            dry_run=True,
+            metadata={},
+        )
+
+    monkeypatch.setattr("phistyle_platform.runtime.runtime.DeepSeekProvider.chat", mock_chat)
 
 
 def make_session():
@@ -54,6 +70,23 @@ def create_capital_request(session, **overrides):
     }
     payload.update(overrides)
     return create_capital_decision_request(session, **payload)
+
+
+def valid_brain_review_response(**overrides):
+    payload = {
+        "recommendation": "human_review_required",
+        "rationale": "LLM review questions the thesis and flags missing evidence.",
+        "confidence": "high",
+        "risks": ["missing-evidence"],
+    }
+    payload.update(overrides)
+    return LLMResponse(
+        provider_id="deepseek",
+        model="deepseek-reasoner",
+        content=json.dumps(payload),
+        dry_run=False,
+        metadata={},
+    )
 
 
 def test_create_capital_decision_request_owns_and_normalizes_fields():
@@ -146,6 +179,38 @@ def test_second_pipeline_run_reuses_triage_brain_and_decision_log():
     assert session.query(TriageResult).count() == 1
     assert session.query(BrainReview).count() == 1
     assert session.query(DecisionLog).count() == 1
+
+
+def test_pipeline_persists_llm_metadata_and_reuses_existing_brain_review(monkeypatch):
+    session = make_session()
+    request = create_capital_request(
+        session,
+        context="INFORMATIONAL ONLY review of portfolio concentration.",
+        risk_level="low",
+    )
+    call_count = 0
+
+    def mock_chat(self, request):
+        nonlocal call_count
+        call_count += 1
+        return valid_brain_review_response(recommendation="defer")
+
+    monkeypatch.setattr("phistyle_platform.runtime.runtime.DeepSeekProvider.chat", mock_chat)
+
+    first = run_capital_decision_pipeline(session, decision_request_id=request.id)
+    second = run_capital_decision_pipeline(session, decision_request_id=request.id)
+    review = session.get(BrainReview, first.brain_review_id)
+
+    assert second.brain_review_id == first.brain_review_id
+    assert call_count == 1
+    assert review.recommendation.value == "defer"
+    assert review.rationale == "LLM review questions the thesis and flags missing evidence."
+    assert review.confidence.value == "high"
+    assert review.llm_backed is True
+    assert review.llm_provider == "deepseek"
+    assert review.llm_model == "deepseek-reasoner"
+    assert review.llm_fallback_reason is None
+    assert review.llm_floor_applied is False
 
 
 def test_orphaned_proposed_decision_log_id_is_not_silently_repaired():

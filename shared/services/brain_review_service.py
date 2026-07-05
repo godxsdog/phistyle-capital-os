@@ -22,6 +22,11 @@ def create_brain_review(
     risks: list[str] | str | None = None,
     required_human_approval: bool = True,
     proposed_decision_log_id: int | None = None,
+    llm_backed: bool = False,
+    llm_provider: str | None = None,
+    llm_model: str | None = None,
+    llm_fallback_reason: str | None = None,
+    llm_floor_applied: bool = False,
 ) -> BrainReview:
     brain_review = BrainReview(
         decision_request_id=decision_request_id,
@@ -32,6 +37,11 @@ def create_brain_review(
         risks=_serialize_risks(risks),
         required_human_approval=required_human_approval,
         proposed_decision_log_id=proposed_decision_log_id,
+        llm_backed=llm_backed,
+        llm_provider=llm_provider,
+        llm_model=llm_model,
+        llm_fallback_reason=llm_fallback_reason,
+        llm_floor_applied=llm_floor_applied,
         created_by=created_by,
     )
     session.add(brain_review)
@@ -74,4 +84,3 @@ def _serialize_risks(risks: list[str] | str | None) -> str:
         if "," in risk:
             raise ValueError("Brain review risk values must not contain commas")
     return ",".join(risks)
-

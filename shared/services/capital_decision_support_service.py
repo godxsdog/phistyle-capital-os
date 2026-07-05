@@ -238,6 +238,11 @@ def _run_and_persist_brain_review(
         risks=result.output["risks"],
         required_human_approval=result.output["required_human_approval"],
         proposed_decision_log_id=None,
+        llm_backed=result.output["llm_backed"],
+        llm_provider=result.output["llm_provider"],
+        llm_model=result.output["llm_model"],
+        llm_fallback_reason=result.output["llm_fallback_reason"],
+        llm_floor_applied=result.output["llm_floor_applied"],
         created_by="brain-orchestrator",
     )
 

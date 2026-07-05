@@ -411,11 +411,20 @@ class TriageAgent:
 
 
 class BrainOrchestrator:
+    valid_recommendations = {
+        "proceed",
+        "request_more_context",
+        "reject",
+        "defer",
+        "human_review_required",
+    }
+    valid_confidences = {"low", "medium", "high"}
+
     metadata = AgentMetadata(
         id="brain-orchestrator",
         name="Brain Orchestrator",
         role="brain",
-        description="Produces deterministic advisory brain reviews for triaged decisions.",
+        description="Produces advisory brain reviews for triaged decisions.",
     )
 
     def run(self, input_data: dict[str, Any], context: AgentRunContext) -> AgentRunResult:
@@ -427,24 +436,67 @@ class BrainOrchestrator:
         risk_level = str(input_data.get("risk_level", ""))
         triage_recommendation = input_data.get("triage_recommendation")
 
-        recommendation, rationale, confidence, risks = self._review(
+        deterministic_recommendation, deterministic_rationale, deterministic_confidence, deterministic_risks = self._review(
             triage_result_id=triage_result_id,
             triage_recommendation=triage_recommendation,
             question=question,
             context=request_context,
             risk_level=risk_level,
         )
+        review = {
+            "recommendation": deterministic_recommendation,
+            "rationale": deterministic_rationale,
+            "confidence": deterministic_confidence,
+            "risks": deterministic_risks,
+        }
+        llm_backed = False
+        llm_provider: str | None = None
+        llm_model: str | None = None
+        llm_fallback_reason: str | None = None
+        llm_floor_applied = False
+
+        llm_review, llm_metadata, fallback_reason = self._llm_review(
+            decision_request_id=decision_request_id,
+            triage_result_id=triage_result_id,
+            triage_recommendation=triage_recommendation,
+            question=question,
+            context=request_context,
+            risk_level=risk_level,
+            deterministic_review=review,
+        )
+        llm_provider = llm_metadata.get("llm_provider")
+        llm_model = llm_metadata.get("llm_model")
+        if llm_review is None:
+            llm_fallback_reason = fallback_reason
+        else:
+            llm_backed = True
+            if deterministic_recommendation != "proceed":
+                llm_floor_applied = llm_review["recommendation"] != deterministic_recommendation
+                review = {
+                    "recommendation": deterministic_recommendation,
+                    "rationale": llm_review["rationale"],
+                    "confidence": llm_review["confidence"],
+                    "risks": llm_review["risks"],
+                }
+            else:
+                review = llm_review
+
         return AgentRunResult(
             agent_id=self.metadata.id,
             status="success",
             output={
                 "decision_request_id": decision_request_id,
                 "triage_result_id": triage_result_id,
-                "recommendation": recommendation,
-                "rationale": rationale,
-                "confidence": confidence,
-                "risks": risks,
+                "recommendation": review["recommendation"],
+                "rationale": review["rationale"],
+                "confidence": review["confidence"],
+                "risks": review["risks"],
                 "required_human_approval": True,
+                "llm_backed": llm_backed,
+                "llm_provider": llm_provider,
+                "llm_model": llm_model,
+                "llm_fallback_reason": llm_fallback_reason,
+                "llm_floor_applied": llm_floor_applied,
             },
             run_id=context.run_id,
             started_at=now,
@@ -452,9 +504,108 @@ class BrainOrchestrator:
             metadata={
                 "role": self.metadata.role,
                 "advisory_only": True,
-                "deterministic_stub": True,
+                "llm_role": ModelRole.DEEP_REASONER.value,
+                "llm_backed": llm_backed,
+                "llm_fallback_reason": llm_fallback_reason,
+                "llm_floor_applied": llm_floor_applied,
             },
         )
+
+    def _llm_review(
+        self,
+        *,
+        decision_request_id: int,
+        triage_result_id: Any,
+        triage_recommendation: Any,
+        question: str,
+        context: str,
+        risk_level: str,
+        deterministic_review: dict[str, Any],
+    ) -> tuple[dict[str, Any] | None, dict[str, str | None], str | None]:
+        try:
+            llm_response = DeepSeekProvider().chat(
+                LLMRequest(
+                    role=ModelRole.DEEP_REASONER,
+                    prompt=self._brain_review_prompt(
+                        decision_request_id=decision_request_id,
+                        triage_result_id=triage_result_id,
+                        triage_recommendation=triage_recommendation,
+                        question=question,
+                        context=context,
+                        risk_level=risk_level,
+                        deterministic_review=deterministic_review,
+                    ),
+                )
+            )
+        except Exception as exc:  # LLM failures must never fail the pipeline.
+            return None, {"llm_provider": "deepseek", "llm_model": None}, self._fallback_reason_for_exception(exc)
+
+        metadata = {
+            "llm_provider": llm_response.provider_id,
+            "llm_model": llm_response.model,
+        }
+        if llm_response.dry_run:
+            return None, metadata, "no_api_key"
+        try:
+            parsed = json.loads(llm_response.content)
+        except json.JSONDecodeError:
+            return None, metadata, "invalid_json"
+        if not self._is_valid_llm_review(parsed):
+            return None, metadata, "schema_invalid"
+        return {
+            "recommendation": parsed["recommendation"],
+            "rationale": parsed["rationale"],
+            "confidence": parsed["confidence"],
+            "risks": parsed["risks"],
+        }, metadata, None
+
+    def _brain_review_prompt(
+        self,
+        *,
+        decision_request_id: int,
+        triage_result_id: Any,
+        triage_recommendation: Any,
+        question: str,
+        context: str,
+        risk_level: str,
+        deterministic_review: dict[str, Any],
+    ) -> str:
+        return (
+            "You are an advisory investment decision reviewer. Return ONLY one JSON object and no markdown.\n"
+            "Contract: {\"recommendation\":\"proceed|request_more_context|reject|defer|human_review_required\","
+            "\"rationale\":\"string\",\"confidence\":\"low|medium|high\",\"risks\":[\"string\",1-8 items]}.\n"
+            "Challenge the thesis, identify unstated risks and missing considerations, and be conservative under uncertainty.\n"
+            "Do not recommend trades, execution, orders, or external actions.\n\n"
+            f"DecisionRequest ID: {decision_request_id}\n"
+            f"TriageResult ID: {triage_result_id}\n"
+            f"Question: {question}\n"
+            f"Context: {context}\n"
+            f"Risk level: {risk_level}\n"
+            f"Triage recommendation: {triage_recommendation}\n"
+            f"Deterministic safety review: {json.dumps(deterministic_review, ensure_ascii=True)}"
+        )
+
+    def _is_valid_llm_review(self, parsed: Any) -> bool:
+        if not isinstance(parsed, dict):
+            return False
+        if parsed.get("recommendation") not in self.valid_recommendations:
+            return False
+        if parsed.get("confidence") not in self.valid_confidences:
+            return False
+        if not isinstance(parsed.get("rationale"), str) or not parsed["rationale"].strip():
+            return False
+        risks = parsed.get("risks")
+        if not isinstance(risks, list) or not 1 <= len(risks) <= 8:
+            return False
+        return all(isinstance(risk, str) and risk.strip() for risk in risks)
+
+    def _fallback_reason_for_exception(self, exc: Exception) -> str:
+        if isinstance(exc, TimeoutError):
+            return "timeout"
+        message = str(exc).lower()
+        if "timeout" in message or "timed out" in message:
+            return "timeout"
+        return "provider_error"
 
     def _review(
         self,

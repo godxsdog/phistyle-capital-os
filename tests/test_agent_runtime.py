@@ -1,8 +1,27 @@
+import json
+
 import pytest
 
 from phistyle_platform.runtime.runtime import BrainOrchestrator, CodeReviewAgent, TriageAgent, create_default_runtime
 from phistyle_platform.runtime.types import UnknownAgentError
 from services.llm_router.types import LLMResponse
+
+
+@pytest.fixture(autouse=True)
+def default_deepseek_dry_run(monkeypatch):
+    def mock_chat(self, request):
+        return LLMResponse(
+            provider_id="deepseek",
+            model="deepseek-chat",
+            content="[dry-run:deepseek] missing api key",
+            dry_run=True,
+            metadata={},
+        )
+
+    monkeypatch.setattr(
+        "phistyle_platform.runtime.runtime.DeepSeekProvider.chat",
+        mock_chat,
+    )
 
 
 def stub_review(**overrides):
@@ -66,7 +85,7 @@ def test_list_agents_includes_default_agents():
             "id": "brain-orchestrator",
             "name": "Brain Orchestrator",
             "role": "brain",
-            "description": "Produces deterministic advisory brain reviews for triaged decisions.",
+            "description": "Produces advisory brain reviews for triaged decisions.",
         },
     ]
 
@@ -363,6 +382,23 @@ def run_brain_orchestrator(
     return result.output
 
 
+def valid_brain_review_response(**overrides):
+    payload = {
+        "recommendation": "human_review_required",
+        "rationale": "LLM review challenges the thesis and names concentration risk.",
+        "confidence": "high",
+        "risks": ["concentration", "missing-evidence"],
+    }
+    payload.update(overrides)
+    return LLMResponse(
+        provider_id="deepseek",
+        model="deepseek-reasoner",
+        content=json.dumps(payload),
+        dry_run=False,
+        metadata={},
+    )
+
+
 def test_brain_orchestrator_missing_triage_uses_rule_zero():
     output = run_brain_orchestrator(triage_result_id=None, triage_recommendation=None)
 
@@ -415,3 +451,116 @@ def test_brain_orchestrator_clean_low_risk_proceeds_but_still_requires_human_app
     assert output["recommendation"] == "proceed"
     assert output["confidence"] == "low"
     assert output["required_human_approval"] is True
+
+
+def test_brain_orchestrator_valid_llm_json_can_replace_proceed_recommendation(monkeypatch):
+    def mock_chat(self, request):
+        assert request.role.value == "deep_reasoner"
+        return valid_brain_review_response(recommendation="human_review_required")
+
+    monkeypatch.setattr(
+        "phistyle_platform.runtime.runtime.DeepSeekProvider.chat",
+        mock_chat,
+    )
+
+    output = run_brain_orchestrator()
+
+    assert output["recommendation"] == "human_review_required"
+    assert output["rationale"] == "LLM review challenges the thesis and names concentration risk."
+    assert output["confidence"] == "high"
+    assert output["risks"] == ["concentration", "missing-evidence"]
+    assert output["required_human_approval"] is True
+    assert output["llm_backed"] is True
+    assert output["llm_provider"] == "deepseek"
+    assert output["llm_model"] == "deepseek-reasoner"
+    assert output["llm_fallback_reason"] is None
+    assert output["llm_floor_applied"] is False
+
+
+def test_brain_orchestrator_floor_keeps_non_proceed_recommendation(monkeypatch):
+    def mock_chat(self, request):
+        return valid_brain_review_response(
+            recommendation="proceed",
+            rationale="LLM thinks the context is sufficient but highlights execution risk.",
+            confidence="low",
+            risks=["execution-risk"],
+        )
+
+    monkeypatch.setattr(
+        "phistyle_platform.runtime.runtime.DeepSeekProvider.chat",
+        mock_chat,
+    )
+
+    output = run_brain_orchestrator(risk_level="high")
+
+    assert output["recommendation"] == "human_review_required"
+    assert output["rationale"] == "LLM thinks the context is sufficient but highlights execution risk."
+    assert output["confidence"] == "low"
+    assert output["risks"] == ["execution-risk"]
+    assert output["llm_backed"] is True
+    assert output["llm_floor_applied"] is True
+
+
+def test_brain_orchestrator_malformed_json_falls_back(monkeypatch):
+    def mock_chat(self, request):
+        return LLMResponse(
+            provider_id="deepseek",
+            model="deepseek-chat",
+            content="not json",
+            dry_run=False,
+            metadata={},
+        )
+
+    monkeypatch.setattr(
+        "phistyle_platform.runtime.runtime.DeepSeekProvider.chat",
+        mock_chat,
+    )
+
+    output = run_brain_orchestrator()
+
+    assert output["recommendation"] == "proceed"
+    assert output["rationale"] == "No deterministic blocker found in this scaffold."
+    assert output["llm_backed"] is False
+    assert output["llm_fallback_reason"] == "invalid_json"
+    assert output["llm_floor_applied"] is False
+
+
+def test_brain_orchestrator_schema_invalid_falls_back(monkeypatch):
+    def mock_chat(self, request):
+        return valid_brain_review_response(recommendation="approve_and_execute")
+
+    monkeypatch.setattr(
+        "phistyle_platform.runtime.runtime.DeepSeekProvider.chat",
+        mock_chat,
+    )
+
+    output = run_brain_orchestrator()
+
+    assert output["recommendation"] == "proceed"
+    assert output["llm_backed"] is False
+    assert output["llm_fallback_reason"] == "schema_invalid"
+
+
+def test_brain_orchestrator_provider_error_falls_back(monkeypatch):
+    def mock_chat(self, request):
+        raise RuntimeError("provider unavailable")
+
+    monkeypatch.setattr(
+        "phistyle_platform.runtime.runtime.DeepSeekProvider.chat",
+        mock_chat,
+    )
+
+    output = run_brain_orchestrator()
+
+    assert output["recommendation"] == "proceed"
+    assert output["llm_backed"] is False
+    assert output["llm_fallback_reason"] == "provider_error"
+
+
+def test_brain_orchestrator_dry_run_falls_back_with_no_api_key():
+    output = run_brain_orchestrator()
+
+    assert output["recommendation"] == "proceed"
+    assert output["llm_backed"] is False
+    assert output["llm_fallback_reason"] == "no_api_key"
+    assert output["llm_floor_applied"] is False
