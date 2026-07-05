@@ -2,6 +2,22 @@
 
 FABLE-APPROVED: yes (2026-07-05)
 
+FINAL VERDICT: ACCEPTED (Fable, 2026-07-06; commits 3bef0ca + 08e3a12).
+STATUS: IMPLEMENTED — awaiting user deploy + migration 0007 + live
+manual verification to become VERIFIED.
+- Round 1: Sonnet review found 1 BLOCKER (comma-in-LLM-risks → live
+  500) + 1 LOW → FIX_REQUIRED. Round 2 fix verified by Fable directly
+  (3-file diff, proportionate): sanitize commas→semicolons post-
+  validation; regression + timeout tests added. 223 passed; 9 failures
+  are pre-existing router/provider issues (diagnosis folded into the
+  Phase 16 ticket).
+- Governance calibration (Phase 15): extra Fable interventions 0;
+  STOPs 0 (false 0); ticket length proportionate; Codex questions
+  unanswered by ticket 0. Lesson recorded: the BLOCKER was a ticket
+  gap (free-text LLM output meeting a comma-joined storage format) —
+  future tickets must state storage-format constraints on any
+  LLM-generated field.
+
 VERDICT ROUND 1 (2026-07-06, on commit 3bef0ca): FIX_REQUIRED.
 Everything passed review (floor rule, fallback taxonomy, idempotency,
 override path, forbidden files, migration 0007 approved) EXCEPT:
