@@ -5,7 +5,9 @@ then route yourself. Do not expand this file past 150 lines.
 
 ## What this system is
 
-Personal investment decision-intelligence system. Advisory-only,
+Personal trading decision-intelligence system (swing trading of TAIFEX
+index futures + US stocks; one pipeline, multiple markets; redirect
+2026-07-05). Advisory-only,
 human-in-the-loop pipeline:
 DecisionRequest → Triage → BrainReview → DecisionLog draft → explicit
 HumanReview → final record. No execution layer exists; approval is

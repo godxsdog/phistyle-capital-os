@@ -1,6 +1,7 @@
 # PhiStyle Capital OS — System Strategy
 
-Status: APPROVED (Fable G0 session, 2026-07-04)
+Status: APPROVED (Fable G0 session, 2026-07-04; §2–§3 updated by the
+2026-07-05 trading redirect — see current-roadmap.md header)
 Owner: Fable (strategy) / User (veto)
 Supersedes: identity ambiguity in README.md and ROADMAP.md "Future Product Phases"
 
@@ -33,12 +34,14 @@ state machine**. The state machine is good. The diary has no brain.
 
 ## 2. Identity decision
 
-PRIMARY IDENTITY
-: **Personal investment decision-intelligence system.** Its job is to
-  identify events that materially change investment decisions, ground
-  decision reviews in real evidence, and keep an auditable record of every
-  decision and its outcome. Capital is the product. Everything else is
-  plumbing.
+PRIMARY IDENTITY (updated 2026-07-05)
+: **Personal trading decision-intelligence system for swing trading —
+  TAIFEX index futures and US stocks, one pipeline, multiple markets.** Its job: make past losses legible,
+  give every strategy an honest net-of-cost verdict (backtest +
+  walk-forward + paper), force every trade through a structured plan →
+  critique → approval → outcome loop, and keep an unfalsifiable record.
+  It improves the trader; it never trades. Capital is the product.
+  Everything else is plumbing.
 
 SECONDARY IDENTITIES (infrastructure, never roadmap drivers)
 : The generic decision workflow engine (DecisionRequest/Triage/Brain/
@@ -60,14 +63,16 @@ real model-driven, evidence-grounded review is the whole product.
 
 ## 3. What it should become (18-month direction)
 
-1. Evidence in: watchlist-driven ingestion of prices, news, filings —
-   stored in the (currently dormant) Knowledge layer.
-2. Intelligence on: LLM-backed BrainReview that cites evidence, challenges
-   the user's thesis, and states risks — advisory-only.
-3. Signal out: a scheduled materiality brief that surfaces only events that
-   change a decision, not news summaries.
-4. Learning loop: decision outcome tracking so past decisions and results
-   feed future reviews.
+(Updated 2026-07-05 — trading redirect)
+
+1. Losses legible: import past futures trades, attribute the losses.
+2. Data in: TAIFEX daily bars + institutional positions, local store.
+3. Honest verdicts: backtest with real costs + walk-forward; no agent
+   may claim a strategy "will make money".
+4. Discipline loop: every trade is a structured plan, critiqued by the
+   LLM against deterministic risk rules, approved by the user,
+   marked-to-market, and closed with a recorded outcome — paper first,
+   live only past the Phase 20 readiness gate.
 
 ## 4. What it must not become
 
@@ -93,9 +98,10 @@ when ALL of the following exist:
 4. A written execution-phase design approved by Fable AND explicitly
    authorized by the user.
 
-Never fully automatic, regardless of maturity: trade submission, payments,
-transfers, external communication on the user's behalf, deletion of
-decision history.
+Never fully automatic, regardless of maturity: order placement or trade
+submission of any kind (futures included — the user always executes
+manually at the broker), payments, transfers, external communication on
+the user's behalf, deletion of decision or trade history.
 
 ## 6. Strategic priorities (ordered)
 
