@@ -22,6 +22,8 @@ only with header `FABLE-APPROVED: yes (date)`.
 8. FILES / LAYERS THAT MUST NOT CHANGE.
 9. DATA / MIGRATION EXPECTATION — exactly one of: NONE (migration = STOP)
    | EXPECTED: <described additive change> (anything else = STOP).
+   Alembic revision IDs must be <= 32 characters (alembic_version is
+   varchar(32); learned the hard way, Phase 15).
 10. STATE-TRANSITION RULES — which transitions may be touched; default:
     none.
 11. IDEMPOTENCY REQUIREMENTS — what must remain safe to re-run.
