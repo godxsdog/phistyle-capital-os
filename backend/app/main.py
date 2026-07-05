@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import os
@@ -88,6 +88,17 @@ from shared.services.triage_service import (
     create_triage_result,
     list_triage_results,
     list_triage_results_for_request,
+)
+from shared.services.trade_attribution_service import get_trade_attribution_metrics
+from shared.services.trade_import_service import (
+    TradeImportError,
+    UnsupportedTradeImportSourceError,
+    import_trade_history,
+    list_cash_transactions,
+    list_import_batches,
+    list_realized_trades,
+    list_trade_fills,
+    warnings_for_batch,
 )
 
 
@@ -276,6 +287,88 @@ class CapitalDecisionSummaryResponse(BaseModel):
     requires_human_review: bool
 
 
+class TradeImportResponse(BaseModel):
+    batch_id: int
+    source: str
+    created: bool
+    fill_count: int
+    cash_row_count: int
+    warning_count: int
+    warnings: list[str]
+
+
+class ImportBatchResponse(BaseModel):
+    id: int
+    source: str
+    content_hash: str
+    imported_at: str
+    fill_count: int
+    cash_row_count: int
+    warning_count: int
+    warnings: list[str]
+
+
+class TradeFillResponse(BaseModel):
+    id: int
+    import_batch_id: int
+    executed_at_raw: str
+    executed_at: str | None
+    symbol: str
+    side: str
+    quantity: str
+    position_effect: str
+    instrument_type: str | None
+    price: str
+    net_price: str | None
+    order_type: str | None
+    currency: str
+
+
+class CashTransactionResponse(BaseModel):
+    id: int
+    import_batch_id: int
+    txn_date: str
+    txn_time: str | None
+    ref_no: str | None
+    description: str
+    misc_fees: str | None
+    commissions_fees: str | None
+    amount: str | None
+    currency: str
+
+
+class RealizedTradeResponse(BaseModel):
+    id: int
+    import_batch_id: int
+    symbol: str
+    direction: str
+    opened_at: str | None
+    closed_at: str | None
+    quantity: str
+    avg_entry: str
+    avg_exit: str
+    gross_pnl: str
+    currency: str
+    holding_period_seconds: int | None
+
+
+class TradeAttributionResponse(BaseModel):
+    trade_count: int
+    gross_pnl: str
+    win_rate: float
+    expectancy: str
+    max_consecutive_losses: int
+    by_symbol: list[dict[str, Any]]
+    by_direction: list[dict[str, Any]]
+    by_instrument_type: list[dict[str, Any]]
+    by_holding_period: list[dict[str, Any]]
+    by_entry_weekday: list[dict[str, Any]]
+    by_entry_hour: list[dict[str, Any]]
+    averaging_down: list[dict[str, Any]]
+    leveraged_symbols: list[str]
+    narrative: dict[str, Any]
+
+
 class TriageRunRequest(BaseModel):
     decision_request_id: int
 
@@ -450,6 +543,65 @@ def get_capital_decision(
     except CapitalDecisionRelatedRecordError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return _capital_decision_summary_response(summary)
+
+
+@app.post("/capital/trade-imports", response_model=TradeImportResponse)
+async def post_capital_trade_import(
+    source: str = Form(...),
+    file: UploadFile = File(...),
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    file_bytes = await file.read()
+    try:
+        result = import_trade_history(session, source=source, file_bytes=file_bytes)
+    except UnsupportedTradeImportSourceError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except TradeImportError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    batch = result.batch
+    return {
+        "batch_id": batch.id,
+        "source": batch.source,
+        "created": result.created,
+        "fill_count": batch.fill_count,
+        "cash_row_count": batch.cash_row_count,
+        "warning_count": batch.warning_count,
+        "warnings": result.warnings,
+    }
+
+
+@app.get("/capital/trade-imports", response_model=list[ImportBatchResponse])
+def get_capital_trade_imports(session: Session = Depends(get_session)) -> list[dict[str, Any]]:
+    return [_import_batch_response(batch) for batch in list_import_batches(session)]
+
+
+@app.get("/capital/trade-fills", response_model=list[TradeFillResponse])
+def get_capital_trade_fills(
+    import_batch_id: int | None = None,
+    session: Session = Depends(get_session),
+) -> list[dict[str, Any]]:
+    return [_trade_fill_response(fill) for fill in list_trade_fills(session, import_batch_id)]
+
+
+@app.get("/capital/cash-transactions", response_model=list[CashTransactionResponse])
+def get_capital_cash_transactions(
+    import_batch_id: int | None = None,
+    session: Session = Depends(get_session),
+) -> list[dict[str, Any]]:
+    return [_cash_transaction_response(txn) for txn in list_cash_transactions(session, import_batch_id)]
+
+
+@app.get("/capital/realized-trades", response_model=list[RealizedTradeResponse])
+def get_capital_realized_trades(
+    import_batch_id: int | None = None,
+    session: Session = Depends(get_session),
+) -> list[dict[str, Any]]:
+    return [_realized_trade_response(trade) for trade in list_realized_trades(session, import_batch_id)]
+
+
+@app.get("/capital/trade-attribution", response_model=TradeAttributionResponse)
+def get_capital_trade_attribution(session: Session = Depends(get_session)) -> dict[str, Any]:
+    return get_trade_attribution_metrics(session)
 
 
 @app.get("/knowledge/documents", response_model=list[KnowledgeDocumentResponse])
@@ -957,6 +1109,69 @@ def _capital_decision_summary_response(summary) -> dict[str, Any]:
             "review_decision": human_review.review_decision.value,
         },
         "requires_human_review": summary.requires_human_review,
+    }
+
+
+def _import_batch_response(batch) -> dict[str, Any]:
+    return {
+        "id": batch.id,
+        "source": batch.source,
+        "content_hash": batch.content_hash,
+        "imported_at": batch.imported_at.isoformat(),
+        "fill_count": batch.fill_count,
+        "cash_row_count": batch.cash_row_count,
+        "warning_count": batch.warning_count,
+        "warnings": warnings_for_batch(batch),
+    }
+
+
+def _trade_fill_response(fill) -> dict[str, Any]:
+    return {
+        "id": fill.id,
+        "import_batch_id": fill.import_batch_id,
+        "executed_at_raw": fill.executed_at_raw,
+        "executed_at": fill.executed_at.isoformat() if fill.executed_at is not None else None,
+        "symbol": fill.symbol,
+        "side": fill.side,
+        "quantity": str(fill.quantity),
+        "position_effect": fill.position_effect,
+        "instrument_type": fill.instrument_type,
+        "price": str(fill.price),
+        "net_price": str(fill.net_price) if fill.net_price is not None else None,
+        "order_type": fill.order_type,
+        "currency": fill.currency,
+    }
+
+
+def _cash_transaction_response(txn) -> dict[str, Any]:
+    return {
+        "id": txn.id,
+        "import_batch_id": txn.import_batch_id,
+        "txn_date": txn.txn_date.isoformat(),
+        "txn_time": txn.txn_time,
+        "ref_no": txn.ref_no,
+        "description": txn.description,
+        "misc_fees": str(txn.misc_fees) if txn.misc_fees is not None else None,
+        "commissions_fees": str(txn.commissions_fees) if txn.commissions_fees is not None else None,
+        "amount": str(txn.amount) if txn.amount is not None else None,
+        "currency": txn.currency,
+    }
+
+
+def _realized_trade_response(trade) -> dict[str, Any]:
+    return {
+        "id": trade.id,
+        "import_batch_id": trade.import_batch_id,
+        "symbol": trade.symbol,
+        "direction": trade.direction,
+        "opened_at": trade.opened_at.isoformat() if trade.opened_at is not None else None,
+        "closed_at": trade.closed_at.isoformat() if trade.closed_at is not None else None,
+        "quantity": str(trade.quantity),
+        "avg_entry": str(trade.avg_entry),
+        "avg_exit": str(trade.avg_exit),
+        "gross_pnl": str(trade.gross_pnl),
+        "currency": trade.currency,
+        "holding_period_seconds": trade.holding_period_seconds,
     }
 
 

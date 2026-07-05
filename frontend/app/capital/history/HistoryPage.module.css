@@ -1,0 +1,50 @@
+.tableWrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.historyGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.miniPanel {
+  border: 1px solid var(--line);
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.miniPanel h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.historyTable {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 680px;
+}
+
+.historyTable th,
+.historyTable td {
+  border-bottom: 1px solid var(--line);
+  padding: 9px 8px;
+  text-align: left;
+  vertical-align: top;
+  font-size: 14px;
+}
+
+.historyTable th {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 760;
+  text-transform: uppercase;
+}
+
+@media (max-width: 760px) {
+  .historyGrid {
+    grid-template-columns: 1fr;
+  }
+}

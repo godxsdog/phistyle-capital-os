@@ -71,9 +71,14 @@ export default async function Home() {
             <h2>Decision dashboard</h2>
             <p>Create Capital investment decision records, run the advisory pipeline, and record explicit human review.</p>
           </div>
-          <Link className="button button-primary" href="/capital/decisions">
-            Capital Decisions
-          </Link>
+          <div className="form-actions">
+            <Link className="button button-primary" href="/capital/decisions">
+              Capital Decisions
+            </Link>
+            <Link className="button" href="/capital/history">
+              Trade History
+            </Link>
+          </div>
         </section>
 
         <section className="app-section" aria-label="Registered apps">
