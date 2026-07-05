@@ -456,7 +456,10 @@ def test_brain_orchestrator_clean_low_risk_proceeds_but_still_requires_human_app
 def test_brain_orchestrator_valid_llm_json_can_replace_proceed_recommendation(monkeypatch):
     def mock_chat(self, request):
         assert request.role.value == "deep_reasoner"
-        return valid_brain_review_response(recommendation="human_review_required")
+        return valid_brain_review_response(
+            recommendation="human_review_required",
+            risks=["concentration, liquidity", "missing-evidence"],
+        )
 
     monkeypatch.setattr(
         "phistyle_platform.runtime.runtime.DeepSeekProvider.chat",
@@ -468,7 +471,7 @@ def test_brain_orchestrator_valid_llm_json_can_replace_proceed_recommendation(mo
     assert output["recommendation"] == "human_review_required"
     assert output["rationale"] == "LLM review challenges the thesis and names concentration risk."
     assert output["confidence"] == "high"
-    assert output["risks"] == ["concentration", "missing-evidence"]
+    assert output["risks"] == ["concentration; liquidity", "missing-evidence"]
     assert output["required_human_approval"] is True
     assert output["llm_backed"] is True
     assert output["llm_provider"] == "deepseek"
@@ -555,6 +558,22 @@ def test_brain_orchestrator_provider_error_falls_back(monkeypatch):
     assert output["recommendation"] == "proceed"
     assert output["llm_backed"] is False
     assert output["llm_fallback_reason"] == "provider_error"
+
+
+def test_brain_orchestrator_timeout_falls_back_with_timeout_reason(monkeypatch):
+    def mock_chat(self, request):
+        raise TimeoutError("request timed out")
+
+    monkeypatch.setattr(
+        "phistyle_platform.runtime.runtime.DeepSeekProvider.chat",
+        mock_chat,
+    )
+
+    output = run_brain_orchestrator()
+
+    assert output["recommendation"] == "proceed"
+    assert output["llm_backed"] is False
+    assert output["llm_fallback_reason"] == "timeout"
 
 
 def test_brain_orchestrator_dry_run_falls_back_with_no_api_key():

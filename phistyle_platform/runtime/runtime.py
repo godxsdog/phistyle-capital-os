@@ -556,7 +556,7 @@ class BrainOrchestrator:
             "recommendation": parsed["recommendation"],
             "rationale": parsed["rationale"],
             "confidence": parsed["confidence"],
-            "risks": parsed["risks"],
+            "risks": self._sanitize_llm_risks(parsed["risks"]),
         }, metadata, None
 
     def _brain_review_prompt(
@@ -598,6 +598,9 @@ class BrainOrchestrator:
         if not isinstance(risks, list) or not 1 <= len(risks) <= 8:
             return False
         return all(isinstance(risk, str) and risk.strip() for risk in risks)
+
+    def _sanitize_llm_risks(self, risks: list[str]) -> list[str]:
+        return [risk.replace(",", ";") for risk in risks]
 
     def _fallback_reason_for_exception(self, exc: Exception) -> str:
         if isinstance(exc, TimeoutError):

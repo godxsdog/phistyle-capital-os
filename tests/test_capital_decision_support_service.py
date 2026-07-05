@@ -213,6 +213,30 @@ def test_pipeline_persists_llm_metadata_and_reuses_existing_brain_review(monkeyp
     assert review.llm_floor_applied is False
 
 
+def test_pipeline_sanitizes_comma_containing_llm_risks_before_storage(monkeypatch):
+    session = make_session()
+    request = create_capital_request(
+        session,
+        context="INFORMATIONAL ONLY review of portfolio concentration.",
+        risk_level="low",
+    )
+
+    def mock_chat(self, request):
+        return valid_brain_review_response(
+            recommendation="defer",
+            risks=["position size, liquidity", "missing-evidence"],
+        )
+
+    monkeypatch.setattr("phistyle_platform.runtime.runtime.DeepSeekProvider.chat", mock_chat)
+
+    result = run_capital_decision_pipeline(session, decision_request_id=request.id)
+    review = session.get(BrainReview, result.brain_review_id)
+
+    assert review.recommendation.value == "defer"
+    assert review.risks == "position size; liquidity,missing-evidence"
+    assert review.llm_backed is True
+
+
 def test_orphaned_proposed_decision_log_id_is_not_silently_repaired():
     session = make_session()
     request = create_capital_request(session)
