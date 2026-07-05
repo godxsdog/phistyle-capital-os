@@ -1,6 +1,29 @@
 # Ticket: Phase 15 — Brain v1: LLM-Backed BrainReview (advisory)
 
 FABLE-APPROVED: yes (2026-07-05)
+
+VERDICT ROUND 1 (2026-07-06, on commit 3bef0ca): FIX_REQUIRED.
+Everything passed review (floor rule, fallback taxonomy, idempotency,
+override path, forbidden files, migration 0007 approved) EXCEPT:
+
+FIX 1 [BLOCKER]: LLM risks containing commas crash the pipeline.
+_serialize_risks (brain_review_service.py) raises ValueError on any
+comma; LLM free text routinely contains commas; nothing catches it →
+live 500 on POST /capital/decisions/{id}/run. REQUIRED FIX (exactly
+this, do not choose another): in BrainOrchestrator, AFTER
+_is_valid_llm_review passes, sanitize each risk string by replacing
+"," with ";" before putting risks into the output. Do NOT reject
+comma-containing reviews (that would discard good reviews); do NOT
+change _serialize_risks or storage format. Add regression tests at
+agent level AND full-pipeline level using an LLM risk string
+containing commas, asserting success and sanitized storage.
+
+FIX 2 [LOW]: add a test asserting llm_fallback_reason == "timeout"
+when DeepSeekProvider.chat raises TimeoutError.
+
+Scope of the fix round: phistyle_platform/runtime/runtime.py + the
+four test files only. No other file may change. No migration change.
+Commit as: fix: sanitize llm risk strings + timeout test (phase 15 r2)
 VALID AFTER: Phase 14 verdict commit lands on main.
 IMPLEMENTATION OWNER: Codex. REVIEW: Sonnet. VERDICT: Fable.
 
