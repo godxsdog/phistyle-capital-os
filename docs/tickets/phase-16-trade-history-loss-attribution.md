@@ -1,6 +1,28 @@
 # Ticket: Phase 16 — Trade History Import & Loss Attribution
 
 FABLE-APPROVED: yes (2026-07-06)
+
+VERDICT: ACCEPTED (Fable, 2026-07-06; commit 94803f1). STATUS:
+IMPLEMENTED — becomes VERIFIED after user deploy + migration 0008 +
+real-statement upload check.
+- Migration 0008 reviewed and APPROVED (additive, 4 tables, id 19
+  chars). Fable personally verified: FIFO short-path P&L sign,
+  oversized-close warning (no opposite position), direction mapping,
+  privacy (no file writes anywhere), chronological sort + id
+  tie-break, averaging-down detector semantics.
+- PROCESS NOTE: independent Sonnet review was WAIVED by the user
+  (session-budget decision, twice interrupted). Compensating control:
+  manual verification below is strengthened — the user MUST cross-
+  check totals against the broker statement before trusting outputs.
+- KNOWN LIMITATION carried: only 8 tests; §13 matrix coverage is
+  thin on hand-computed FIFO numbers and an explicit shorts cycle.
+  Backfill these tests opportunistically in the Phase 16 KGI
+  follow-up round (add to that round's scope).
+- Janitorial finding logged: the 9 pre-existing router/provider test
+  failures are stale tests vs current abstraction (brain/worker roles,
+  ContentBlock tuples); product-code fix would touch frozen
+  services/llm_router — deferred until a phase legitimately opens
+  that layer.
 SCOPE NOTE: Schwab parser + analytics NOW; KGI futures parser is a
 declared follow-up round of THIS phase once the user provides a KGI
 sample (STOP: never guess the KGI format).

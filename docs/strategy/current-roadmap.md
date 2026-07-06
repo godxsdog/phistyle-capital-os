@@ -20,6 +20,22 @@ Invariant numbers refer to the 13-item list in CLAUDE.md.
 Decision rule: fewer, higher-value phases. Implementation owner Codex;
 design + verdict owner Fable.
 
+## HANDOFF STATE (Fable session close, 2026-07-06)
+
+- Phase 14 VERIFIED, Phase 15 VERIFIED (live on Mac mini).
+- Phase 16 ticket APPROVED + Sonnet-reviewed → READY FOR CODEX.
+- Phase 17/18/19 tickets APPROVED and written at session close;
+  each REQUIRES a fresh-context Sonnet clarity review BEFORE Codex
+  starts (per-ticket PRE-START header). Phase 20 is a gate, no ticket.
+- Per-phase loop for future sessions: Sonnet clarity review → Codex
+  implements → completion report → NEW Fable session issues the
+  verdict (paste the report + this file's pointers; CLAUDE.md routes).
+- Pending user inputs: KGI futures CSV sample (Phase 16 follow-up
+  round); real 凱基 fee schedule (Phase 18 honesty); longer Schwab
+  export when Phase 16 ships.
+- Do not skip verdicts to move faster. The loop caught a live-500
+  BLOCKER in Phase 15 that tests missed.
+
 ---
 
 ## Phase 14 — State-Machine Hardening
@@ -208,6 +224,17 @@ CONFIDENCE: framework HIGH, thresholds MEDIUM (tune with data).
 - FROZEN: Phase 2.5 local model serving; the 8 stub providers; App
   Registry future apps; AgentRuntime generalization; multi-agent
   workflows; knowledge graph; RAG/vector search.
+- RESEQUENCED BY USER PRIORITY (2026-07-06, supersedes the earlier
+  deferral): Phase PW-1 (Point Wallet) runs NOW, before Phase 17.
+  Order: PW-1 → PW-2 → PW-3 → 17 → 19 → 18 (19 hard-depends on 17;
+  escape hatch: trading may resume after PW-2 — see
+  docs/strategy/point-wallet-master-spec.md, which is the binding PW
+  program spec). Ticket: docs/tickets/phase-pw1-point-wallet.md. PW-1 is a separate vertical:
+  own tables/pages, ZERO coupling to the decision pipeline; activates
+  the App Registry points-wallet entry. Fable NO-GO stands on
+  "broader-than-seats.aero" award search (closed airline engines;
+  scraping arms race) — the wallet records, values, and watches; it
+  does not out-index seats.aero.
 - ABANDONED: routing the capital pipeline through AgentRuntime;
   `/platform/` directory (delete opportunistically); "many providers"
   as a goal.
