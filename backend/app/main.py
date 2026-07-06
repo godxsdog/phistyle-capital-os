@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import date
+from decimal import Decimal
 from typing import Any
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
@@ -76,6 +78,23 @@ from shared.services.human_review_service import (
     list_human_reviews,
     list_human_reviews_for_decision_log,
     review_decision_log,
+)
+from shared.services.exchange_rate_service import list_fx_rates, refresh_fx_rates
+from shared.services.point_wallet_service import (
+    PointWalletError,
+    PointWalletNotFoundError,
+    create_account,
+    create_ledger_transaction,
+    create_program,
+    create_purchase_offer,
+    create_transfer_rule,
+    get_portfolio_summary,
+    list_accounts,
+    list_cost_lots,
+    list_ledger_transactions,
+    list_programs,
+    list_purchase_offers,
+    list_transfer_rules,
 )
 from shared.services.decision_request_service import (
     DecisionRequestStatusTransitionError,
@@ -369,6 +388,146 @@ class TradeAttributionResponse(BaseModel):
     narrative: dict[str, Any]
 
 
+class PointProgramRequest(BaseModel):
+    name: str
+    kind: str
+    expiry_rule_note: str | None = None
+
+
+class PointProgramResponse(BaseModel):
+    id: int
+    name: str
+    kind: str
+    expiry_rule_note: str | None
+
+
+class PointAccountRequest(BaseModel):
+    owner: str
+    program_id: int
+    account_ref: str | None = None
+    status: str = "active"
+    last_activity: date | None = None
+    notes: str | None = None
+
+
+class PointAccountResponse(BaseModel):
+    id: int
+    owner: str
+    program_id: int
+    account_ref: str | None
+    status: str
+    last_activity: str | None
+    notes: str | None
+
+
+class LedgerTransactionRequest(BaseModel):
+    account_id: int
+    kind: str
+    quantity: Decimal
+    occurred_at: date
+    counterparty_account_id: int | None = None
+    cost_total: Decimal | None = None
+    cost_currency: str | None = None
+    note: str | None = None
+    create_lot: bool = False
+
+
+class LedgerTransactionResponse(BaseModel):
+    id: int
+    account_id: int
+    kind: str
+    quantity: str
+    occurred_at: str
+    counterparty_account_id: int | None
+    cost_total: str | None
+    cost_currency: str | None
+    note: str | None
+
+
+class CostLotResponse(BaseModel):
+    id: int
+    account_id: int
+    source_transaction_id: int
+    quantity: str
+    remaining_quantity: str
+    total_cost_twd: str
+    cost_per_point_twd: str
+    acquired_at: str
+
+
+class TransferRuleRequest(BaseModel):
+    from_program_id: int
+    to_program_id: int
+    ratio_from: Decimal
+    ratio_to: Decimal
+    bonus_pct: Decimal = Decimal("0")
+    min_transfer: Decimal | None = None
+    transfer_days_note: str | None = None
+    valid_from: date
+    valid_until: date | None = None
+
+
+class TransferRuleResponse(BaseModel):
+    id: int
+    from_program_id: int
+    to_program_id: int
+    ratio_from: str
+    ratio_to: str
+    bonus_pct: str
+    min_transfer: str | None
+    transfer_days_note: str | None
+    valid_from: str
+    valid_until: str | None
+
+
+class PurchaseOfferRequest(BaseModel):
+    program_id: int
+    kind: str
+    base_price: Decimal
+    currency: str
+    bonus_pct: Decimal = Decimal("0")
+    min_points: Decimal | None = None
+    max_points: Decimal | None = None
+    start_date: date
+    end_date: date | None = None
+    source_note: str | None = None
+
+
+class PurchaseOfferResponse(BaseModel):
+    id: int
+    program_id: int
+    kind: str
+    base_price: str
+    currency: str
+    bonus_pct: str
+    min_points: str | None
+    max_points: str | None
+    effective_cpp: str
+    start_date: str
+    end_date: str | None
+    source_note: str | None
+
+
+class FxRateResponse(BaseModel):
+    id: int
+    currency: str
+    twd_per_unit: str
+    as_of: str
+    source: str
+
+
+class FxRefreshResponse(BaseModel):
+    source: str
+    created: str
+
+
+class PointWalletPortfolioResponse(BaseModel):
+    owners: list[str]
+    accounts: list[dict[str, Any]]
+    expiring_soon: list[dict[str, Any]]
+    total_real_cost_basis_twd: str
+
+
 class TriageRunRequest(BaseModel):
     decision_request_id: int
 
@@ -602,6 +761,180 @@ def get_capital_realized_trades(
 @app.get("/capital/trade-attribution", response_model=TradeAttributionResponse)
 def get_capital_trade_attribution(session: Session = Depends(get_session)) -> dict[str, Any]:
     return get_trade_attribution_metrics(session)
+
+
+@app.get("/wallet/programs", response_model=list[PointProgramResponse])
+def get_wallet_programs(session: Session = Depends(get_session)) -> list[dict[str, Any]]:
+    return [_point_program_response(row) for row in list_programs(session)]
+
+
+@app.post("/wallet/programs", response_model=PointProgramResponse)
+def post_wallet_program(
+    request: PointProgramRequest,
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    try:
+        row = create_program(
+            session,
+            name=request.name,
+            kind=request.kind,
+            expiry_rule_note=request.expiry_rule_note,
+        )
+    except PointWalletError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except IntegrityError as exc:
+        session.rollback()
+        raise HTTPException(status_code=400, detail="Program already exists") from exc
+    return _point_program_response(row)
+
+
+@app.get("/wallet/accounts", response_model=list[PointAccountResponse])
+def get_wallet_accounts(session: Session = Depends(get_session)) -> list[dict[str, Any]]:
+    return [_point_account_response(row) for row in list_accounts(session)]
+
+
+@app.post("/wallet/accounts", response_model=PointAccountResponse)
+def post_wallet_account(
+    request: PointAccountRequest,
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    try:
+        row = create_account(
+            session,
+            owner=request.owner,
+            program_id=request.program_id,
+            account_ref=request.account_ref,
+            status=request.status,
+            last_activity=request.last_activity,
+            notes=request.notes,
+        )
+    except PointWalletNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PointWalletError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except IntegrityError as exc:
+        session.rollback()
+        raise HTTPException(status_code=400, detail="Account already exists for owner/program") from exc
+    return _point_account_response(row)
+
+
+@app.get("/wallet/ledger", response_model=list[LedgerTransactionResponse])
+def get_wallet_ledger(
+    account_id: int | None = None,
+    session: Session = Depends(get_session),
+) -> list[dict[str, Any]]:
+    return [_ledger_transaction_response(row) for row in list_ledger_transactions(session, account_id)]
+
+
+@app.post("/wallet/ledger", response_model=LedgerTransactionResponse)
+def post_wallet_ledger(
+    request: LedgerTransactionRequest,
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    try:
+        row = create_ledger_transaction(
+            session,
+            account_id=request.account_id,
+            kind=request.kind,
+            quantity=request.quantity,
+            occurred_at=request.occurred_at,
+            counterparty_account_id=request.counterparty_account_id,
+            cost_total=request.cost_total,
+            cost_currency=request.cost_currency,
+            note=request.note,
+            create_lot=request.create_lot,
+        )
+    except PointWalletNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PointWalletError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return _ledger_transaction_response(row)
+
+
+@app.get("/wallet/cost-lots", response_model=list[CostLotResponse])
+def get_wallet_cost_lots(
+    account_id: int | None = None,
+    session: Session = Depends(get_session),
+) -> list[dict[str, Any]]:
+    return [_cost_lot_response(row) for row in list_cost_lots(session, account_id)]
+
+
+@app.get("/wallet/transfer-rules", response_model=list[TransferRuleResponse])
+def get_wallet_transfer_rules(session: Session = Depends(get_session)) -> list[dict[str, Any]]:
+    return [_transfer_rule_response(row) for row in list_transfer_rules(session)]
+
+
+@app.post("/wallet/transfer-rules", response_model=TransferRuleResponse)
+def post_wallet_transfer_rule(
+    request: TransferRuleRequest,
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    try:
+        row = create_transfer_rule(
+            session,
+            from_program_id=request.from_program_id,
+            to_program_id=request.to_program_id,
+            ratio_from=request.ratio_from,
+            ratio_to=request.ratio_to,
+            bonus_pct=request.bonus_pct,
+            min_transfer=request.min_transfer,
+            transfer_days_note=request.transfer_days_note,
+            valid_from=request.valid_from,
+            valid_until=request.valid_until,
+        )
+    except PointWalletNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return _transfer_rule_response(row)
+
+
+@app.get("/wallet/purchase-offers", response_model=list[PurchaseOfferResponse])
+def get_wallet_purchase_offers(session: Session = Depends(get_session)) -> list[dict[str, Any]]:
+    return [_purchase_offer_response(row) for row in list_purchase_offers(session)]
+
+
+@app.post("/wallet/purchase-offers", response_model=PurchaseOfferResponse)
+def post_wallet_purchase_offer(
+    request: PurchaseOfferRequest,
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    try:
+        row = create_purchase_offer(
+            session,
+            program_id=request.program_id,
+            kind=request.kind,
+            base_price=request.base_price,
+            currency=request.currency,
+            bonus_pct=request.bonus_pct,
+            min_points=request.min_points,
+            max_points=request.max_points,
+            start_date=request.start_date,
+            end_date=request.end_date,
+            source_note=request.source_note,
+        )
+    except PointWalletNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return _purchase_offer_response(row)
+
+
+@app.get("/wallet/fx-rates", response_model=list[FxRateResponse])
+def get_wallet_fx_rates(session: Session = Depends(get_session)) -> list[dict[str, Any]]:
+    return [_fx_rate_response(row) for row in list_fx_rates(session)]
+
+
+@app.post("/wallet/fx-rates/refresh", response_model=FxRefreshResponse)
+def post_wallet_fx_refresh(session: Session = Depends(get_session)) -> dict[str, str]:
+    return refresh_fx_rates(session)
+
+
+@app.get("/wallet/portfolio", response_model=PointWalletPortfolioResponse)
+def get_wallet_portfolio(
+    owner: str | None = None,
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    try:
+        return _point_wallet_portfolio_response(get_portfolio_summary(session, owner=owner))
+    except PointWalletError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @app.get("/knowledge/documents", response_model=list[KnowledgeDocumentResponse])
@@ -1172,6 +1505,121 @@ def _realized_trade_response(trade) -> dict[str, Any]:
         "gross_pnl": str(trade.gross_pnl),
         "currency": trade.currency,
         "holding_period_seconds": trade.holding_period_seconds,
+    }
+
+
+def _point_program_response(row) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "name": row.name,
+        "kind": row.kind,
+        "expiry_rule_note": row.expiry_rule_note,
+    }
+
+
+def _point_account_response(row) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "owner": row.owner,
+        "program_id": row.program_id,
+        "account_ref": row.account_ref,
+        "status": row.status,
+        "last_activity": row.last_activity.isoformat() if row.last_activity is not None else None,
+        "notes": row.notes,
+    }
+
+
+def _ledger_transaction_response(row) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "account_id": row.account_id,
+        "kind": row.kind,
+        "quantity": str(row.quantity),
+        "occurred_at": row.occurred_at.isoformat(),
+        "counterparty_account_id": row.counterparty_account_id,
+        "cost_total": str(row.cost_total) if row.cost_total is not None else None,
+        "cost_currency": row.cost_currency,
+        "note": row.note,
+    }
+
+
+def _cost_lot_response(row) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "account_id": row.account_id,
+        "source_transaction_id": row.source_transaction_id,
+        "quantity": str(row.quantity),
+        "remaining_quantity": str(row.remaining_quantity),
+        "total_cost_twd": str(row.total_cost_twd),
+        "cost_per_point_twd": str(row.cost_per_point_twd),
+        "acquired_at": row.acquired_at.isoformat(),
+    }
+
+
+def _transfer_rule_response(row) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "from_program_id": row.from_program_id,
+        "to_program_id": row.to_program_id,
+        "ratio_from": str(row.ratio_from),
+        "ratio_to": str(row.ratio_to),
+        "bonus_pct": str(row.bonus_pct),
+        "min_transfer": str(row.min_transfer) if row.min_transfer is not None else None,
+        "transfer_days_note": row.transfer_days_note,
+        "valid_from": row.valid_from.isoformat(),
+        "valid_until": row.valid_until.isoformat() if row.valid_until is not None else None,
+    }
+
+
+def _purchase_offer_response(row) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "program_id": row.program_id,
+        "kind": row.kind,
+        "base_price": str(row.base_price),
+        "currency": row.currency,
+        "bonus_pct": str(row.bonus_pct),
+        "min_points": str(row.min_points) if row.min_points is not None else None,
+        "max_points": str(row.max_points) if row.max_points is not None else None,
+        "effective_cpp": str(row.effective_cpp),
+        "start_date": row.start_date.isoformat(),
+        "end_date": row.end_date.isoformat() if row.end_date is not None else None,
+        "source_note": row.source_note,
+    }
+
+
+def _fx_rate_response(row) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "currency": row.currency,
+        "twd_per_unit": str(row.twd_per_unit),
+        "as_of": row.as_of.isoformat(),
+        "source": row.source,
+    }
+
+
+def _point_wallet_portfolio_response(summary: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "owners": summary["owners"],
+        "accounts": [_account_summary_response(row) for row in summary["accounts"]],
+        "expiring_soon": [_account_summary_response(row) for row in summary["expiring_soon"]],
+        "total_real_cost_basis_twd": str(summary["total_real_cost_basis_twd"]),
+    }
+
+
+def _account_summary_response(row) -> dict[str, Any]:
+    return {
+        "account_id": row.account_id,
+        "owner": row.owner,
+        "program_id": row.program_id,
+        "program_name": row.program_name,
+        "program_kind": row.program_kind,
+        "balance": str(row.balance),
+        "remaining_lot_quantity": str(row.remaining_lot_quantity),
+        "real_cost_basis_twd": str(row.real_cost_basis_twd),
+        "avg_cost_per_point_twd": str(row.avg_cost_per_point_twd) if row.avg_cost_per_point_twd is not None else None,
+        "market_value_twd": str(row.market_value_twd) if row.market_value_twd is not None else None,
+        "expires_at": row.expires_at.isoformat() if row.expires_at is not None else None,
     }
 
 
