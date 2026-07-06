@@ -8,6 +8,7 @@ class AppStatus(str, Enum):
     ACTIVE = "active"
     FUTURE = "future"
     SCAFFOLD = "scaffold"
+    SCAFFOLD_ACTIVE = "scaffold-active"
 
 
 class Sensitivity(str, Enum):
@@ -35,4 +36,3 @@ class AppMetadata:
         payload["status"] = self.status.value
         payload["sensitivity"] = self.sensitivity.value
         return payload
-

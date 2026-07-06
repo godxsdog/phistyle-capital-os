@@ -17,9 +17,9 @@ DEFAULT_APPS: tuple[AppMetadata, ...] = (
         id="points-wallet",
         name="Points Wallet",
         category="travel-finance",
-        status=AppStatus.FUTURE,
+        status=AppStatus.SCAFFOLD_ACTIVE,
         sensitivity=Sensitivity.PERSONAL_FINANCE,
-        route="/apps/points-wallet",
+        route="/wallet",
         health_endpoint="/apps/points-wallet/health",
         owner="apps/points-wallet",
         data_scope="loyalty balances, award costs, expiry reminders",
@@ -58,4 +58,3 @@ DEFAULT_APPS: tuple[AppMetadata, ...] = (
         data_scope="resort logs, gear, weather, training notes",
     ),
 )
-

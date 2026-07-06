@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import date
+from decimal import Decimal
 from typing import Any
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
@@ -77,6 +79,25 @@ from shared.services.human_review_service import (
     list_human_reviews_for_decision_log,
     review_decision_log,
 )
+from shared.services.point_wallet_service import (
+    PointWalletError,
+    PointWalletNotFoundError,
+    add_award_availability,
+    add_point_balance,
+    add_valuation_rate,
+    create_award_watch,
+    create_loyalty_program,
+    create_transfer_partner,
+    get_portfolio_summary,
+    list_award_availability,
+    list_award_watches,
+    list_loyalty_programs,
+    list_point_balances,
+    list_transfer_partners,
+    list_valuation_rates,
+    seed_default_valuation_programs,
+)
+from shared.services.seats_aero_service import SeatsAeroError, fetch_award_watch
 from shared.services.decision_request_service import (
     DecisionRequestStatusTransitionError,
     create_decision_request,
@@ -369,6 +390,123 @@ class TradeAttributionResponse(BaseModel):
     narrative: dict[str, Any]
 
 
+class LoyaltyProgramRequest(BaseModel):
+    name: str
+    kind: str
+    notes: str | None = None
+
+
+class LoyaltyProgramResponse(BaseModel):
+    id: int
+    name: str
+    kind: str
+    notes: str | None
+
+
+class PointBalanceRequest(BaseModel):
+    program_id: int
+    balance: Decimal
+    as_of: date
+    expires_at: date | None = None
+    note: str | None = None
+
+
+class PointBalanceResponse(BaseModel):
+    id: int
+    program_id: int
+    balance: str
+    as_of: str
+    expires_at: str | None
+    note: str | None
+    created_at: str | None
+
+
+class ValuationRateRequest(BaseModel):
+    program_id: int
+    twd_per_point: Decimal
+    effective_date: date
+    source: str | None = None
+
+
+class ValuationRateResponse(BaseModel):
+    id: int
+    program_id: int
+    twd_per_point: str
+    effective_date: str
+    source: str | None
+
+
+class TransferPartnerRequest(BaseModel):
+    from_program_id: int
+    to_program_id: int
+    ratio_from: int
+    ratio_to: int
+    transfer_days: str | None = None
+    notes: str | None = None
+
+
+class TransferPartnerResponse(BaseModel):
+    id: int
+    from_program_id: int
+    to_program_id: int
+    ratio_from: int
+    ratio_to: int
+    transfer_days: str | None
+    notes: str | None
+
+
+class AwardWatchRequest(BaseModel):
+    origin: str
+    destination: str
+    cabin: str
+    program_id: int | None = None
+    active: bool = True
+
+
+class AwardWatchResponse(BaseModel):
+    id: int
+    origin: str
+    destination: str
+    cabin: str
+    program_id: int | None
+    active: bool
+
+
+class AwardAvailabilityRequest(BaseModel):
+    watch_id: int
+    seen_date: date
+    flight_date: date
+    program: str
+    seats: int | None = None
+    miles_cost: Decimal | None = None
+    taxes_fees: str | None = None
+    source: str = "manual"
+    raw: str | None = None
+
+
+class AwardAvailabilityResponse(BaseModel):
+    id: int
+    watch_id: int
+    seen_date: str
+    flight_date: str
+    program: str
+    seats: int | None
+    miles_cost: str | None
+    taxes_fees: str | None
+    source: str
+    raw: str | None
+
+
+class AwardFetchResponse(BaseModel):
+    created: int
+
+
+class PointPortfolioResponse(BaseModel):
+    total_value_twd: str
+    programs: list[dict[str, Any]]
+    expiring_soon: list[dict[str, Any]]
+
+
 class TriageRunRequest(BaseModel):
     decision_request_id: int
 
@@ -602,6 +740,190 @@ def get_capital_realized_trades(
 @app.get("/capital/trade-attribution", response_model=TradeAttributionResponse)
 def get_capital_trade_attribution(session: Session = Depends(get_session)) -> dict[str, Any]:
     return get_trade_attribution_metrics(session)
+
+
+@app.post("/wallet/seed-defaults")
+def post_wallet_seed_defaults(session: Session = Depends(get_session)) -> dict[str, str]:
+    seed_default_valuation_programs(session)
+    return {"status": "ok"}
+
+
+@app.get("/wallet/programs", response_model=list[LoyaltyProgramResponse])
+def get_wallet_programs(session: Session = Depends(get_session)) -> list[dict[str, Any]]:
+    return [_loyalty_program_response(program) for program in list_loyalty_programs(session)]
+
+
+@app.post("/wallet/programs", response_model=LoyaltyProgramResponse)
+def post_wallet_program(
+    request: LoyaltyProgramRequest,
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    try:
+        program = create_loyalty_program(session, name=request.name, kind=request.kind, notes=request.notes)
+    except PointWalletError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except IntegrityError as exc:
+        session.rollback()
+        raise HTTPException(status_code=400, detail="Program already exists") from exc
+    return _loyalty_program_response(program)
+
+
+@app.get("/wallet/balances", response_model=list[PointBalanceResponse])
+def get_wallet_balances(session: Session = Depends(get_session)) -> list[dict[str, Any]]:
+    return [_point_balance_response(row) for row in list_point_balances(session)]
+
+
+@app.post("/wallet/balances", response_model=PointBalanceResponse)
+def post_wallet_balance(
+    request: PointBalanceRequest,
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    try:
+        row = add_point_balance(
+            session,
+            program_id=request.program_id,
+            balance=request.balance,
+            as_of=request.as_of,
+            expires_at=request.expires_at,
+            note=request.note,
+        )
+    except PointWalletNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return _point_balance_response(row)
+
+
+@app.get("/wallet/valuations", response_model=list[ValuationRateResponse])
+def get_wallet_valuations(session: Session = Depends(get_session)) -> list[dict[str, Any]]:
+    return [_valuation_rate_response(row) for row in list_valuation_rates(session)]
+
+
+@app.post("/wallet/valuations", response_model=ValuationRateResponse)
+def post_wallet_valuation(
+    request: ValuationRateRequest,
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    try:
+        row = add_valuation_rate(
+            session,
+            program_id=request.program_id,
+            twd_per_point=request.twd_per_point,
+            effective_date=request.effective_date,
+            source=request.source,
+        )
+    except PointWalletNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except IntegrityError as exc:
+        session.rollback()
+        raise HTTPException(status_code=400, detail="Valuation already exists for program/effective_date") from exc
+    return _valuation_rate_response(row)
+
+
+@app.get("/wallet/transfers", response_model=list[TransferPartnerResponse])
+def get_wallet_transfers(session: Session = Depends(get_session)) -> list[dict[str, Any]]:
+    return [_transfer_partner_response(row) for row in list_transfer_partners(session)]
+
+
+@app.post("/wallet/transfers", response_model=TransferPartnerResponse)
+def post_wallet_transfer(
+    request: TransferPartnerRequest,
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    try:
+        row = create_transfer_partner(
+            session,
+            from_program_id=request.from_program_id,
+            to_program_id=request.to_program_id,
+            ratio_from=request.ratio_from,
+            ratio_to=request.ratio_to,
+            transfer_days=request.transfer_days,
+            notes=request.notes,
+        )
+    except PointWalletNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PointWalletError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except IntegrityError as exc:
+        session.rollback()
+        raise HTTPException(status_code=400, detail="Transfer partner already exists") from exc
+    return _transfer_partner_response(row)
+
+
+@app.get("/wallet/watches", response_model=list[AwardWatchResponse])
+def get_wallet_watches(session: Session = Depends(get_session)) -> list[dict[str, Any]]:
+    return [_award_watch_response(row) for row in list_award_watches(session)]
+
+
+@app.post("/wallet/watches", response_model=AwardWatchResponse)
+def post_wallet_watch(
+    request: AwardWatchRequest,
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    try:
+        row = create_award_watch(
+            session,
+            origin=request.origin,
+            destination=request.destination,
+            cabin=request.cabin,
+            program_id=request.program_id,
+            active=request.active,
+        )
+    except PointWalletNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PointWalletError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return _award_watch_response(row)
+
+
+@app.get("/wallet/availability", response_model=list[AwardAvailabilityResponse])
+def get_wallet_availability(
+    watch_id: int | None = None,
+    session: Session = Depends(get_session),
+) -> list[dict[str, Any]]:
+    return [_award_availability_response(row) for row in list_award_availability(session, watch_id)]
+
+
+@app.post("/wallet/availability", response_model=AwardAvailabilityResponse)
+def post_wallet_availability(
+    request: AwardAvailabilityRequest,
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    try:
+        row = add_award_availability(
+            session,
+            watch_id=request.watch_id,
+            seen_date=request.seen_date,
+            flight_date=request.flight_date,
+            program=request.program,
+            seats=request.seats,
+            miles_cost=request.miles_cost,
+            taxes_fees=request.taxes_fees,
+            source=request.source,
+            raw=request.raw,
+        )
+    except PointWalletNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PointWalletError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except IntegrityError as exc:
+        session.rollback()
+        raise HTTPException(status_code=400, detail="Award availability already exists") from exc
+    return _award_availability_response(row)
+
+
+@app.post("/wallet/watches/{watch_id}/fetch", response_model=AwardFetchResponse)
+def post_wallet_watch_fetch(
+    watch_id: int,
+    session: Session = Depends(get_session),
+) -> dict[str, int]:
+    try:
+        return fetch_award_watch(session, watch_id=watch_id)
+    except SeatsAeroError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/wallet/portfolio", response_model=PointPortfolioResponse)
+def get_wallet_portfolio(session: Session = Depends(get_session)) -> dict[str, Any]:
+    return _point_portfolio_response(get_portfolio_summary(session))
 
 
 @app.get("/knowledge/documents", response_model=list[KnowledgeDocumentResponse])
@@ -1172,6 +1494,90 @@ def _realized_trade_response(trade) -> dict[str, Any]:
         "gross_pnl": str(trade.gross_pnl),
         "currency": trade.currency,
         "holding_period_seconds": trade.holding_period_seconds,
+    }
+
+
+def _loyalty_program_response(program) -> dict[str, Any]:
+    return {"id": program.id, "name": program.name, "kind": program.kind, "notes": program.notes}
+
+
+def _point_balance_response(row) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "program_id": row.program_id,
+        "balance": str(row.balance),
+        "as_of": row.as_of.isoformat(),
+        "expires_at": row.expires_at.isoformat() if row.expires_at is not None else None,
+        "note": row.note,
+        "created_at": row.created_at.isoformat() if row.created_at is not None else None,
+    }
+
+
+def _valuation_rate_response(row) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "program_id": row.program_id,
+        "twd_per_point": str(row.twd_per_point),
+        "effective_date": row.effective_date.isoformat(),
+        "source": row.source,
+    }
+
+
+def _transfer_partner_response(row) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "from_program_id": row.from_program_id,
+        "to_program_id": row.to_program_id,
+        "ratio_from": row.ratio_from,
+        "ratio_to": row.ratio_to,
+        "transfer_days": row.transfer_days,
+        "notes": row.notes,
+    }
+
+
+def _award_watch_response(row) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "origin": row.origin,
+        "destination": row.destination,
+        "cabin": row.cabin,
+        "program_id": row.program_id,
+        "active": row.active,
+    }
+
+
+def _award_availability_response(row) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "watch_id": row.watch_id,
+        "seen_date": row.seen_date.isoformat(),
+        "flight_date": row.flight_date.isoformat(),
+        "program": row.program,
+        "seats": row.seats,
+        "miles_cost": str(row.miles_cost) if row.miles_cost is not None else None,
+        "taxes_fees": row.taxes_fees,
+        "source": row.source,
+        "raw": row.raw,
+    }
+
+
+def _point_portfolio_response(summary: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "total_value_twd": str(summary["total_value_twd"]),
+        "programs": [_portfolio_row_response(row) for row in summary["programs"]],
+        "expiring_soon": [_portfolio_row_response(row) for row in summary["expiring_soon"]],
+    }
+
+
+def _portfolio_row_response(row) -> dict[str, Any]:
+    return {
+        "program_id": row.program_id,
+        "program_name": row.program_name,
+        "balance": str(row.balance),
+        "as_of": row.as_of.isoformat(),
+        "expires_at": row.expires_at.isoformat() if row.expires_at is not None else None,
+        "twd_per_point": str(row.twd_per_point) if row.twd_per_point is not None else None,
+        "value_twd": str(row.value_twd) if row.value_twd is not None else None,
     }
 
 
