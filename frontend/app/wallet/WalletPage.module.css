@@ -1,4 +1,4 @@
-.ownerTabs {
+.tabs {
   display: inline-flex;
   gap: 8px;
   flex-wrap: wrap;
@@ -8,6 +8,37 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
+}
+
+.formGrid {
+  display: grid;
+  gap: 10px;
+}
+
+.filterRow {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.ruleList {
+  display: grid;
+  gap: 10px;
+}
+
+.ruleSentence {
+  border: 1px solid var(--line);
+  background: #f9fbfb;
+  padding: 12px;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.checkboxLine {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
 }
 
 .tableWrap {
@@ -37,7 +68,8 @@
 }
 
 @media (max-width: 760px) {
-  .grid {
+  .grid,
+  .filterRow {
     grid-template-columns: 1fr;
   }
 }

@@ -146,7 +146,7 @@ async function requestJson<T>(path: string, init: RequestInit = {}): Promise<T> 
   });
 
   if (!response.ok) {
-    let message = `Request failed with status ${response.status}`;
+    let message = `請求失敗（狀態 ${response.status}）`;
     try {
       const payload = (await response.json()) as { detail?: unknown };
       if (typeof payload.detail === "string") {
