@@ -7,10 +7,10 @@ def test_registry_lists_initial_apps():
     assert app_ids == {"capital", "points-wallet", "dental-ppt", "travel", "snowboard"}
 
 
-def test_point_wallet_is_scaffold_active_and_dental_ppt_remains_future():
+def test_legacy_apps_are_registered_as_future_only():
     apps = {app["id"]: app for app in list_registered_apps()}
 
-    assert apps["points-wallet"]["status"] == "scaffold-active"
+    assert apps["points-wallet"]["status"] == "future"
     assert apps["dental-ppt"]["status"] == "future"
 
 

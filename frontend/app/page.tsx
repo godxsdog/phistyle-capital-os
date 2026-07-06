@@ -81,17 +81,6 @@ export default async function Home() {
           </div>
         </section>
 
-        <section className="action-band" aria-label="Point wallet dashboard">
-          <div>
-            <div className="section-kicker">Point Wallet</div>
-            <h2>Mileage and points ledger</h2>
-            <p>Track balances, editable valuations, transfer paths, expiry risk, and cached award availability.</p>
-          </div>
-          <Link className="button button-primary" href="/wallet">
-            Open Wallet
-          </Link>
-        </section>
-
         <section className="app-section" aria-label="Registered apps">
           <div>
             <div className="section-kicker">App Registry</div>
