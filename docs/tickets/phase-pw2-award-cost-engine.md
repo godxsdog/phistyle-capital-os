@@ -52,6 +52,31 @@ math, purchase offers, or just buying the cash ticket.
 - Both owners' accounts are enumerated; each scenario is tagged with
   its owner.
 
+## AMENDMENT (Fable, 2026-07-07 — 依使用者萬里通成本邏輯重述,
+## 覆蓋前述任何牴觸條款)
+
+A1. 新增方法 B+:「當日購入來源點數 → 轉點鏈」。來源計畫(如
+  萬里通)若有有效 purchase_offer,引擎必須評估「現買現轉」路徑:
+  成本 =(實付金額+手續費−回饋)÷ 實際入帳點數(含贈點)×
+  所需來源點數,再經轉點鏈。§3「methods are PURE」放寬為:
+  單一來源購買+單一轉點鏈 = 合法方法;仍禁止多來源混搭。
+A2. purchase_offers 增欄(同一 migration 內):paid_amount、fees、
+  rebate、points_received(皆 NULL 可空);四欄齊備時系統自動算
+  每點真實成本 =(paid+fees−rebate)÷points_received,取代
+  base_price;贈點一律算進分母。
+A3. transfer_rules 增欄:rule_kind Text NOT NULL DEFAULT 'linear'
+  (linear|threshold_block)、block_size、block_bonus_points(NULL)。
+  threshold_block 語義(Marriott 型):每滿 block_size 送
+  block_bonus_points,餘量按基礎比例無加成,需求反算必須分段。
+  必測 fixture:60k Marriott→25k miles 規則下,需 30,000 miles
+  → 恰好 75,000 Marriott(60k 段 25k + 15k 段 5k),斷言到點。
+A4. Bonus 一律套在「實際最終取得數」上(分母),不是備註。
+A5. 情境輸出增列並顯示:effective_cpp、total_cash_cost_twd、
+  points_acquired、points_consumed、points_leftover。排名依
+  total cost(完成這張票的總成本),leftover 為資訊欄不進排名。
+A6. 每個 quote 對每個可行 program 至少跑三種成本來源:既有點數
+  (lot 真實成本)、當日萬里通路徑(A1)、官方/第三方買分。
+
 ## 5/7. SCOPE + SCHEMA (one additive migration, id ≤ 32 chars)
 
 - award_quotes: id PK; origin Text NULL; destination Text NULL;
