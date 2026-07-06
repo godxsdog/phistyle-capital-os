@@ -59,6 +59,18 @@ commit f2cf216; invariant 3 is enforced on all writer paths.
 
 ## Session start (mandatory)
 
+0. REPO IDENTITY GUARD — verify all three, else STOP with reason
+   "WRONG WORKING DIRECTORY" (not "missing prerequisite"):
+   (a) `git rev-parse --show-toplevel` succeeds;
+   (b) `git remote get-url origin` contains
+       `godxsdog/phistyle-capital-os`;
+   (c) `docs/strategy/current-roadmap.md` exists.
+   Canonical DEV repo (Codex works ONLY here): MacBook,
+   /Users/kaichanghunag/Documents/Git/phistyle-capital-os
+   (username "kaichanghunag" is correct for the MacBook).
+   Runtime clone (deploy-only, never hand-edited, no Codex):
+   Mac mini, /Users/kaichanghuang/Server/phistyle-capital-os.
+   Any other copy is stray — do not work in it.
 1. `git status` + branch (expect clean main).
 2. Read docs/strategy/current-roadmap.md for the current phase.
 3. Implementation task → require a FABLE-APPROVED ticket in

@@ -4,8 +4,14 @@ FABLE-APPROVED: yes (2026-07-06, v2 — supersedes the earlier thin
 PW-1 draft after the user's legacy-architecture analysis; the master
 spec is docs/strategy/point-wallet-master-spec.md and is BINDING).
 IMPLEMENTATION OWNER: Codex. VERDICT: new Fable session.
+PREFLIGHT ORDER (mandatory, in this order):
+Step 0 — repo identity guard per CLAUDE.md §Session start item 0
+  (wrong repo → STOP "WRONG WORKING DIRECTORY").
+Step 1 — confirm `data-rescue/` is gitignored (it is, .gitignore:10).
+Step 2 — THEN check the prerequisite files below.
 HARD PREREQUISITE (STOP without them): the user places the three
-legacy data files at repo-root `data-rescue/` (gitignored):
+legacy data files at repo-root `data-rescue/` (gitignored) IN THE
+CANONICAL DEV REPO ON THE MACBOOK:
 points_wallet.json, pingan_wanlitong_rules.json,
 official_purchase_costs.json. PRIVACY: data-rescue/ is added to
 .gitignore in this ticket and its contents are NEVER committed.
