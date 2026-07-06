@@ -93,7 +93,9 @@ docs/strategy/strategic-stop-conditions.md.
 Dev: MacBook, this repo. Runtime: Mac mini 192.168.0.216
 (~/Server/phistyle-capital-os), frontend :3000, backend :8000, deploy via
 ./scripts/remote_deploy.sh. NAS 192.168.0.223 = cold storage only.
-Migrations (only when a phase declares one):
+Migrations (only when a phase declares one; ALWAYS pin the approved
+revision id — `upgrade head` is FORBIDDEN, it once deployed an
+unverdicted migration):
 `cd ~/Server/phistyle-capital-os && /usr/local/bin/docker-compose exec
-backend python -m alembic -c /app/alembic.ini upgrade head`.
+backend python -m alembic -c /app/alembic.ini upgrade <approved-rev>`.
 Sandbox agent sessions cannot verify live runtime — say so explicitly.

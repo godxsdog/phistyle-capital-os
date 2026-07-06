@@ -60,6 +60,11 @@ or report completion as bare "Done".
 Only ACCEPTED advances the roadmap. Implementation success ≠ strategic
 acceptance.
 
+PUSH DISCIPLINE (added 2026-07-06 after the 0009 incident):
+implementation commits are NOT pushed until the Fable verdict is
+ACCEPTED. `git push` publishes only verdicted work. Migration
+commands always pin the approved revision id, never `head`.
+
 ## When Fable review is mandatory
 
 - Ticket approval for every phase (before Codex starts).
