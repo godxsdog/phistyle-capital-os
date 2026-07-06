@@ -1,5 +1,21 @@
 # Ticket: Phase PW-1 — Point Wallet Domain Core + Data Rescue
 
+VERDICT: ACCEPTED (Fable, 2026-07-06; commit 83bd112). STATUS:
+IMPLEMENTED — VERIFIED after user deploy + migration
+0009_pw_domain_core + real import on Mac mini + side-by-side check
+vs legacy app.
+- Migration reviewed column-for-column vs master spec: APPROVED.
+- Fable spot-checks: no rescued data in the commit (verified);
+  hash-based idempotent import; unmappable rows → warnings.
+- MUST EXAMINE at manual verification: the real dry-run produced
+  only 6 cost_lots across 34 accounts and 33 warnings — confirm the
+  warning list explains the accounts without cost basis (legacy data
+  likely lacks cost fields for most), and that dashboard totals match
+  the legacy app. If totals diverge → FIX round, do not accept
+  silently.
+- Test count thin (8) — same note as Phase 16; backfill
+  opportunistically in PW-2.
+
 FABLE-APPROVED: yes (2026-07-06, v2 — supersedes the earlier thin
 PW-1 draft after the user's legacy-architecture analysis; the master
 spec is docs/strategy/point-wallet-master-spec.md and is BINDING).
