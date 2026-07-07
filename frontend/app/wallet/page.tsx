@@ -1,24 +1,25 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   Account,
+  Portfolio,
   Program,
-  PurchaseOffer,
   TransferRule,
+  WalletAiParsedRule,
   createAccount,
   createLedger,
   createProgram,
-  createPurchaseOffer,
   createTransferRule,
+  deleteTransferRule,
   getPortfolio,
   listAccounts,
   listPrograms,
-  listPurchaseOffers,
   listTransferRules,
+  parseWalletRuleWithAi,
   refreshFxRates,
-  Portfolio,
+  updateTransferRule,
 } from "../../lib/walletApi";
 import {
   CURRENCY_OPTIONS,
@@ -31,7 +32,9 @@ import {
 } from "./constants";
 import styles from "./WalletPage.module.css";
 
-const PREF_KEY = "phistyle.wallet.preferences";
+const PREF_KEY = "phistyle.wallet.source.preferences";
+const COST_PREF_KEY = "phistyle.wallet.manualCost";
+const PINNED_PREF_KEY = "phistyle.wallet.pinnedSources";
 
 type Preferences = {
   tab: WalletTab;
@@ -39,7 +42,26 @@ type Preferences = {
   programId: string;
   kind: string;
   currency: string;
+  targetProgramId: string;
 };
+
+type EditableRule = {
+  from_program_id: string;
+  to_program_id: string;
+  ratio_from: string;
+  ratio_to: string;
+  bonus_pct: string;
+  min_transfer: string;
+  valid_from: string;
+  valid_until: string;
+  transfer_days_note: string;
+  rule_kind: string;
+  block_size: string;
+  block_bonus_points: string;
+  source_url: string;
+};
+
+type ManualCosts = Record<string, string>;
 
 const DEFAULT_PREFS: Preferences = {
   tab: "overview",
@@ -47,30 +69,31 @@ const DEFAULT_PREFS: Preferences = {
   programId: "",
   kind: "adjustment",
   currency: "TWD",
+  targetProgramId: "",
 };
+
+const PRIMARY_SOURCE_TABS: Array<{ tab: WalletTab; aliases: string[] }> = [
+  { tab: "wanlitong", aliases: ["萬里通", "平安萬里通"] },
+  { tab: "marriott", aliases: ["萬豪", "Marriott"] },
+  { tab: "juneyao", aliases: ["吉祥", "Juneyao"] },
+];
 
 export default function WalletPage() {
   const [prefs, setPrefs] = useState<Preferences>(DEFAULT_PREFS);
+  const [manualCosts, setManualCosts] = useState<ManualCosts>({});
+  const [pinnedSources, setPinnedSources] = useState<number[]>([]);
   const [programs, setPrograms] = useState<Program[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [rules, setRules] = useState<TransferRule[]>([]);
-  const [offers, setOffers] = useState<PurchaseOffer[]>([]);
   const [portfolioAll, setPortfolioAll] = useState<Portfolio | null>(null);
   const [portfolioKent, setPortfolioKent] = useState<Portfolio | null>(null);
   const [portfolioWife, setPortfolioWife] = useState<Portfolio | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
-  const [fromFilter, setFromFilter] = useState("");
-  const [toFilter, setToFilter] = useState("");
 
   useEffect(() => {
-    const stored = window.localStorage.getItem(PREF_KEY);
-    if (!stored) return;
-    try {
-      setPrefs({ ...DEFAULT_PREFS, ...(JSON.parse(stored) as Partial<Preferences>) });
-    } catch {
-      window.localStorage.removeItem(PREF_KEY);
-    }
+    loadStoredPrefs();
+    void loadWallet();
   }, []);
 
   useEffect(() => {
@@ -78,30 +101,30 @@ export default function WalletPage() {
   }, [prefs]);
 
   useEffect(() => {
-    void loadWallet();
-  }, []);
+    window.localStorage.setItem(COST_PREF_KEY, JSON.stringify(manualCosts));
+  }, [manualCosts]);
 
-  const activeOwner = prefs.tab === "wife" ? "wife" : "kent";
-  const activePortfolio = activeOwner === "wife" ? portfolioWife : portfolioKent;
-  const ownerAccounts = useMemo(
-    () => accounts.filter((account) => account.owner === activeOwner),
-    [accounts, activeOwner],
-  );
+  useEffect(() => {
+    window.localStorage.setItem(PINNED_PREF_KEY, JSON.stringify(pinnedSources));
+  }, [pinnedSources]);
+
+  const sourcePrograms = useMemo(() => {
+    const sourceIds = Array.from(new Set(rules.map((rule) => rule.from_program_id)));
+    return programs.filter((program) => sourceIds.includes(program.id) || pinnedSources.includes(program.id));
+  }, [pinnedSources, programs, rules]);
+
+  const activeSourceProgram = useMemo(() => {
+    const primary = PRIMARY_SOURCE_TABS.find((item) => item.tab === prefs.tab);
+    if (primary) return findProgramByAliases(programs, primary.aliases);
+    return null;
+  }, [prefs.tab, programs]);
+
   async function loadWallet() {
     try {
-      const [
-        nextPrograms,
-        nextAccounts,
-        nextRules,
-        nextOffers,
-        nextPortfolioAll,
-        nextPortfolioKent,
-        nextPortfolioWife,
-      ] = await Promise.all([
+      const [nextPrograms, nextAccounts, nextRules, nextPortfolioAll, nextPortfolioKent, nextPortfolioWife] = await Promise.all([
         listPrograms(),
         listAccounts(),
         listTransferRules(),
-        listPurchaseOffers(),
         getPortfolio(),
         getPortfolio("kent"),
         getPortfolio("wife"),
@@ -109,7 +132,6 @@ export default function WalletPage() {
       setPrograms(nextPrograms);
       setAccounts(nextAccounts);
       setRules(nextRules);
-      setOffers(nextOffers);
       setPortfolioAll(nextPortfolioAll);
       setPortfolioKent(nextPortfolioKent);
       setPortfolioWife(nextPortfolioWife);
@@ -123,9 +145,25 @@ export default function WalletPage() {
     try {
       await action();
       setStatus(message);
+      setError(null);
       await loadWallet();
+    } catch (exc) {
+      setError(exc instanceof Error ? exc.message : "儲存失敗，請確認欄位後再試。");
+    }
+  }
+
+  function loadStoredPrefs() {
+    try {
+      const storedPrefs = window.localStorage.getItem(PREF_KEY);
+      if (storedPrefs) setPrefs({ ...DEFAULT_PREFS, ...(JSON.parse(storedPrefs) as Partial<Preferences>) });
+      const storedCosts = window.localStorage.getItem(COST_PREF_KEY);
+      if (storedCosts) setManualCosts(JSON.parse(storedCosts) as ManualCosts);
+      const storedPinned = window.localStorage.getItem(PINNED_PREF_KEY);
+      if (storedPinned) setPinnedSources(JSON.parse(storedPinned) as number[]);
     } catch {
-      setError("儲存失敗，請確認欄位後再試。");
+      window.localStorage.removeItem(PREF_KEY);
+      window.localStorage.removeItem(COST_PREF_KEY);
+      window.localStorage.removeItem(PINNED_PREF_KEY);
     }
   }
 
@@ -145,65 +183,85 @@ export default function WalletPage() {
         <section className="page-header">
           <div>
             <div className="section-kicker">點數錢包</div>
-            <h1>點數與哩程帳本</h1>
-            <p>用帳本記錄兩個人的點數、真實成本、到期風險、轉點規則與買分價格。</p>
+            <h1>來源計畫視角</h1>
+            <p>每個來源計畫都是一頁完整世界：成本、餘額、兌換表、AI 解析與快速試算都放在同一處。</p>
           </div>
           <button className="button" type="button" onClick={() => submit(refreshFxRates, "匯率已更新；若外部服務失敗則使用備用匯率。")}>
             更新匯率
           </button>
           <Link className="button button-primary" href="/wallet/awards">
-            兌換成本
+            換票比價
           </Link>
         </section>
 
-        <div className={styles.tabs} role="tablist" aria-label="點數錢包功能">
+        <div className={styles.primaryNav} role="tablist" aria-label="點數錢包導覽">
           {(Object.keys(TAB_LABELS) as WalletTab[]).map((tab) => (
             <button
               key={tab}
               className={`button ${prefs.tab === tab ? "button-primary" : ""}`}
               type="button"
-              onClick={() => updatePrefs({ tab, owner: tab === "wife" ? "wife" : tab === "kent" ? "kent" : prefs.owner })}
+              onClick={() => updatePrefs({ tab })}
             >
               {TAB_LABELS[tab]}
             </button>
           ))}
+          <Link className="button" href="/wallet/awards">換票比價</Link>
         </div>
 
         {error ? <div className="notice notice-error">{error}</div> : null}
         {status ? <p className="subtle">{status}</p> : null}
 
         {prefs.tab === "overview" ? (
-          <OverviewPanel programs={programs} portfolio={portfolioAll} kent={portfolioKent} wife={portfolioWife} />
+          <OverviewPanel
+            programs={programs}
+            sourcePrograms={sourcePrograms}
+            portfolio={portfolioAll}
+            kent={portfolioKent}
+            wife={portfolioWife}
+            openSource={(program) => {
+              setPinnedSources((current) => (current.includes(program.id) ? current : [...current, program.id]));
+              updatePrefs({ tab: primaryTabForProgram(program) || "otherSources" });
+            }}
+          />
         ) : null}
 
-        {prefs.tab === "kent" || prefs.tab === "wife" ? (
-          <OwnerPanel
-            owner={activeOwner}
+        {activeSourceProgram ? (
+          <SourceProgramPanel
+            program={activeSourceProgram}
             programs={programs}
-            accounts={ownerAccounts}
-            portfolio={activePortfolio}
-            prefs={prefs}
-            updatePrefs={updatePrefs}
+            rules={rules.filter((rule) => rule.from_program_id === activeSourceProgram.id)}
+            portfolioAll={portfolioAll}
+            manualCost={manualCosts[String(activeSourceProgram.id)] || ""}
+            setManualCost={(value) => setManualCosts((current) => ({ ...current, [String(activeSourceProgram.id)]: value }))}
             submit={submit}
           />
         ) : null}
 
-        {prefs.tab === "transferRules" ? (
-          <TransferRulesPanel
+        {prefs.tab !== "overview" && prefs.tab !== "otherSources" && prefs.tab !== "points" && !activeSourceProgram ? (
+          <section className="panel">
+            <h2>{TAB_LABELS[prefs.tab]}</h2>
+            <p className="pending-text">目前還沒有找到這個來源計畫。請先在「我的點數」新增計畫，或到「其他來源」釘選已存在的來源。</p>
+          </section>
+        ) : null}
+
+        {prefs.tab === "otherSources" ? (
+          <OtherSourcesPanel
             programs={programs}
-            rules={rules}
-            fromFilter={fromFilter}
-            toFilter={toFilter}
-            setFromFilter={setFromFilter}
-            setToFilter={setToFilter}
+            sourcePrograms={sourcePrograms}
+            pinnedSources={pinnedSources}
+            setPinnedSources={setPinnedSources}
+          />
+        ) : null}
+
+        {prefs.tab === "points" ? (
+          <MyPointsPanel
+            programs={programs}
+            accounts={accounts}
+            portfolio={portfolioAll}
             prefs={prefs}
             updatePrefs={updatePrefs}
             submit={submit}
           />
-        ) : null}
-
-        {prefs.tab === "purchaseOffers" ? (
-          <PurchaseOffersPanel programs={programs} offers={offers} prefs={prefs} updatePrefs={updatePrefs} submit={submit} />
         ) : null}
       </div>
     </main>
@@ -212,20 +270,23 @@ export default function WalletPage() {
 
 function OverviewPanel({
   programs,
+  sourcePrograms,
   portfolio,
   kent,
   wife,
+  openSource,
 }: {
   programs: Program[];
+  sourcePrograms: Program[];
   portfolio: Portfolio | null;
   kent: Portfolio | null;
   wife: Portfolio | null;
+  openSource: (program: Program) => void;
 }) {
   return (
     <>
       <section className="panel">
         <h2>總覽</h2>
-        <p className="subtle">這裡看兩個人合計持有多少點、真實成本是多少，以及 90 天內會不會到期。</p>
         <div className="data-grid">
           <div>
             <dt>兩人合計真實成本</dt>
@@ -240,35 +301,30 @@ function OverviewPanel({
             <dd>{formatMoney(wife?.total_real_cost_basis_twd)}</dd>
           </div>
           <div>
-            <dt>90 天內到期</dt>
-            <dd>{portfolio?.expiring_soon.length ?? 0} 筆</dd>
+            <dt>來源計畫頁</dt>
+            <dd>{sourcePrograms.length} 個</dd>
           </div>
         </div>
       </section>
 
       <section className="panel">
-        <h2>各計畫餘額</h2>
-        <Table
-          columns={["持有人", "計畫", "餘額", "剩餘成本批次", "真實成本", "每點成本", "買分估值", "到期日"]}
-          rows={(portfolio?.accounts || []).map((row) => accountSummaryRow(row))}
-        />
+        <h2>來源計畫</h2>
+        <div className={styles.sourceGrid}>
+          {sourcePrograms.map((program) => (
+            <article className={styles.sourceCard} key={program.id}>
+              <h3>{program.name}</h3>
+              <p>{KIND_LABELS.programKind[program.kind] || program.kind}</p>
+              <button className="button" type="button" onClick={() => openSource(program)}>
+                開啟來源頁
+              </button>
+            </article>
+          ))}
+          {sourcePrograms.length === 0 ? <p className="pending-text">目前還沒有任何來源計畫。</p> : null}
+        </div>
       </section>
 
       <section className="panel">
-        <h2>到期警示</h2>
-        <Table
-          columns={["持有人", "計畫", "餘額", "到期日"]}
-          rows={(portfolio?.expiring_soon || []).map((row) => [
-            ownerLabel(String(row.owner)),
-            String(row.program_name),
-            formatNumber(row.balance),
-            String(row.expires_at || "未設定"),
-          ])}
-        />
-      </section>
-
-      <section className="panel">
-        <h2>計畫清單</h2>
+        <h2>全部計畫</h2>
         <Table
           columns={["計畫", "類型", "到期規則"]}
           rows={programs.map((program) => [
@@ -282,8 +338,378 @@ function OverviewPanel({
   );
 }
 
-function OwnerPanel({
-  owner,
+function SourceProgramPanel({
+  program,
+  programs,
+  rules,
+  portfolioAll,
+  manualCost,
+  setManualCost,
+  submit,
+}: {
+  program: Program;
+  programs: Program[];
+  rules: TransferRule[];
+  portfolioAll: Portfolio | null;
+  manualCost: string;
+  setManualCost: (value: string) => void;
+  submit: (action: () => Promise<unknown>, message: string) => Promise<void>;
+}) {
+  const [quickTargetId, setQuickTargetId] = useState("");
+  const [quickQuantity, setQuickQuantity] = useState("30000");
+  const cost = Number(manualCost || sourceAvgCost(portfolioAll, program.id) || 0);
+  const balances = ownerBalances(portfolioAll, program.id);
+  const targetPrograms = programs.filter((item) => rules.some((rule) => rule.to_program_id === item.id));
+  const activeQuickRule = rules.find((rule) => String(rule.to_program_id) === (quickTargetId || String(targetPrograms[0]?.id || "")));
+  const quick = activeQuickRule ? calculateRequiredSourcePoints(activeQuickRule, Number(quickQuantity || 0)) : null;
+
+  return (
+    <>
+      <section className="panel">
+        <div className={styles.sourceHero}>
+          <div>
+            <div className="section-kicker">來源計畫</div>
+            <h2>{program.name}</h2>
+            <p className="subtle">這一頁只回答：我有多少、每點成本多少、可以轉去哪裡、要送多少點才夠。</p>
+          </div>
+          <label className={styles.inlineField}>
+            <span>每點成本 NT$</span>
+            <input
+              value={manualCost}
+              onChange={(event) => setManualCost(event.target.value)}
+              placeholder={sourceAvgCost(portfolioAll, program.id) || "手動輸入"}
+              inputMode="decimal"
+            />
+          </label>
+        </div>
+        <div className="data-grid">
+          <div>
+            <dt>凱章餘額</dt>
+            <dd>{formatNumber(balances.kent)}</dd>
+          </div>
+          <div>
+            <dt>老婆餘額</dt>
+            <dd>{formatNumber(balances.wife)}</dd>
+          </div>
+          <div>
+            <dt>成本來源</dt>
+            <dd>{manualCost ? "手動試算" : "成本批次平均"}</dd>
+          </div>
+          <div>
+            <dt>可轉目的地</dt>
+            <dd>{targetPrograms.length} 個</dd>
+          </div>
+        </div>
+      </section>
+
+      <section className="panel">
+        <div className={styles.sectionHeader}>
+          <div>
+            <h2>完整兌換表</h2>
+            <p className="subtle">比例一律是「送出 X：得到 Y」，列內即可編輯，不跳頁。</p>
+          </div>
+        </div>
+        {rules.length === 0 ? (
+          <div className={styles.emptyState}>
+            <strong>+新增兌換規則</strong>
+            <p>這個來源計畫目前沒有規則。可以手動新增，或貼促銷文字讓 AI 先整理成待確認預覽。</p>
+          </div>
+        ) : (
+          <div className={styles.transferTable}>
+            <div className={styles.transferHead}>
+              <span>目標計畫</span>
+              <span>比例</span>
+              <span>加贈</span>
+              <span>門檻規則</span>
+              <span>試算</span>
+              <span>操作</span>
+            </div>
+            {rules.map((rule) => (
+              <TransferRuleRow
+                key={rule.id}
+                rule={rule}
+                programs={programs}
+                sourceCost={cost}
+                submit={submit}
+              />
+            ))}
+          </div>
+        )}
+      </section>
+
+      <div className={styles.grid}>
+        <TransferRuleCreatePanel program={program} programs={programs} submit={submit} />
+        <AiParsePanel sourceProgram={program} programs={programs} submit={submit} />
+      </div>
+
+      <section className="panel">
+        <h2>快速試算器</h2>
+        <div className={styles.inlineCalc}>
+          <span>我要</span>
+          <select value={quickTargetId || String(targetPrograms[0]?.id || "")} onChange={(event) => setQuickTargetId(event.target.value)}>
+            {targetPrograms.length === 0 ? <option value="">沒有可用目的地</option> : null}
+            {targetPrograms.map((item) => (
+              <option key={item.id} value={item.id}>{item.name}</option>
+            ))}
+          </select>
+          <input value={quickQuantity} onChange={(event) => setQuickQuantity(event.target.value)} inputMode="numeric" />
+          <span>點</span>
+        </div>
+        {quick && activeQuickRule ? (
+          <div className="data-grid">
+            <div>
+              <dt>需送出 {program.name}</dt>
+              <dd>{formatNumber(quick.requiredSourcePoints)} 點</dd>
+            </div>
+            <div>
+              <dt>使用規則</dt>
+              <dd>{ruleRatioText(activeQuickRule)}</dd>
+            </div>
+            <div>
+              <dt>總成本</dt>
+              <dd>{formatMoney(quick.requiredSourcePoints * cost)}</dd>
+            </div>
+            <div>
+              <dt>實得</dt>
+              <dd>{formatNumber(quick.receivedPoints)} 點</dd>
+            </div>
+          </div>
+        ) : (
+          <p className="pending-text">請先新增至少一條兌換規則。</p>
+        )}
+      </section>
+    </>
+  );
+}
+
+function TransferRuleRow({
+  rule,
+  programs,
+  sourceCost,
+  submit,
+}: {
+  rule: TransferRule;
+  programs: Program[];
+  sourceCost: number;
+  submit: (action: () => Promise<unknown>, message: string) => Promise<void>;
+}) {
+  const [draft, setDraft] = useState<EditableRule>(() => editableRule(rule));
+  const [targetPoints, setTargetPoints] = useState("30000");
+  const calc = calculateRequiredSourcePoints(rule, Number(targetPoints || 0));
+
+  useEffect(() => {
+    setDraft(editableRule(rule));
+  }, [rule]);
+
+  function updateDraft(key: keyof EditableRule, value: string) {
+    setDraft((current) => ({ ...current, [key]: value }));
+  }
+
+  return (
+    <article className={styles.transferRow}>
+      <div>
+        <select value={draft.to_program_id} onChange={(event) => updateDraft("to_program_id", event.target.value)}>
+          {programs.map((program) => (
+            <option key={program.id} value={program.id}>{program.name}</option>
+          ))}
+        </select>
+        {rule.source_url ? <a href={rule.source_url} target="_blank" rel="noreferrer">查證</a> : <span className="subtle">未填查證連結</span>}
+      </div>
+      <div className={styles.compactInputs}>
+        <input value={draft.ratio_from} onChange={(event) => updateDraft("ratio_from", event.target.value)} inputMode="decimal" aria-label="送出數量" />
+        <span>:</span>
+        <input value={draft.ratio_to} onChange={(event) => updateDraft("ratio_to", event.target.value)} inputMode="decimal" aria-label="得到數量" />
+      </div>
+      <input value={draft.bonus_pct} onChange={(event) => updateDraft("bonus_pct", event.target.value)} inputMode="decimal" aria-label="加贈百分比" />
+      <div className={styles.compactInputs}>
+        <select value={draft.rule_kind} onChange={(event) => updateDraft("rule_kind", event.target.value)}>
+          <option value="linear">一般</option>
+          <option value="threshold_block">滿額</option>
+        </select>
+        <input value={draft.block_size} onChange={(event) => updateDraft("block_size", event.target.value)} placeholder="滿額" />
+        <input value={draft.block_bonus_points} onChange={(event) => updateDraft("block_bonus_points", event.target.value)} placeholder="送點" />
+      </div>
+      <div>
+        <input value={targetPoints} onChange={(event) => setTargetPoints(event.target.value)} inputMode="numeric" aria-label="試算目標點數" />
+        <p className="subtle">
+          需送 {formatNumber(calc.requiredSourcePoints)}，成本 {formatMoney(calc.requiredSourcePoints * sourceCost)}
+        </p>
+      </div>
+      <div className={styles.rowActions}>
+        <button
+          className="button button-primary"
+          type="button"
+          onClick={() => submit(() => updateTransferRule(rule.id, transferRulePayload(draft)), "兌換規則已更新。")}
+        >
+          儲存
+        </button>
+        <button className="button" type="button" onClick={() => submit(() => deleteTransferRule(rule.id), "兌換規則已刪除。")}>
+          刪除
+        </button>
+      </div>
+    </article>
+  );
+}
+
+function TransferRuleCreatePanel({
+  program,
+  programs,
+  submit,
+}: {
+  program: Program;
+  programs: Program[];
+  submit: (action: () => Promise<unknown>, message: string) => Promise<void>;
+}) {
+  return (
+    <FormPanel title="+新增兌換規則" description="手動新增一條來源計畫規則；比例請填送出數量與實得數量。">
+      {(form) => (
+        <>
+          <select name="to_program_id" required>
+            <option value="">選擇目標計畫</option>
+            {programs.filter((item) => item.id !== program.id).map((item) => (
+              <option key={item.id} value={item.id}>{item.name}</option>
+            ))}
+          </select>
+          <select name="rule_kind" defaultValue="linear">
+            <option value="linear">一般比例</option>
+            <option value="threshold_block">滿額加贈</option>
+          </select>
+          <input name="ratio_from" placeholder="送出數量，例如 60000" required />
+          <input name="ratio_to" placeholder="實得數量，例如 20000" required />
+          <input name="bonus_pct" placeholder="加贈百分比，沒有填 0" />
+          <input name="min_transfer" placeholder="最低轉出點數，可留空" />
+          <input name="block_size" placeholder="每滿多少送點，例如 60000" />
+          <input name="block_bonus_points" placeholder="滿額額外送點，例如 5000" />
+          <input name="valid_until" type="date" />
+          <input name="source_url" placeholder="查證連結" />
+          <button
+            className="button button-primary"
+            type="button"
+            onClick={() => submit(() => createTransferRule({
+              from_program_id: program.id,
+              to_program_id: Number(field(form, "to_program_id")),
+              ratio_from: field(form, "ratio_from"),
+              ratio_to: field(form, "ratio_to"),
+              bonus_pct: field(form, "bonus_pct") || "0",
+              min_transfer: field(form, "min_transfer") || undefined,
+              valid_from: today(),
+              valid_until: field(form, "valid_until") || undefined,
+              transfer_days_note: "手動新增",
+              rule_kind: field(form, "rule_kind"),
+              block_size: field(form, "block_size") || undefined,
+              block_bonus_points: field(form, "block_bonus_points") || undefined,
+              source_url: field(form, "source_url") || undefined,
+            }), "兌換規則已新增。")}
+          >
+            加入規則
+          </button>
+        </>
+      )}
+    </FormPanel>
+  );
+}
+
+function AiParsePanel({
+  sourceProgram,
+  programs,
+  submit,
+}: {
+  sourceProgram: Program;
+  programs: Program[];
+  submit: (action: () => Promise<unknown>, message: string) => Promise<void>;
+}) {
+  const [text, setText] = useState("");
+  const [preview, setPreview] = useState<WalletAiParsedRule | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const target = preview?.to_program_name ? findProgramByAliases(programs, [preview.to_program_name]) : null;
+
+  async function parse() {
+    const response = await parseWalletRuleWithAi({ source_program_name: sourceProgram.name, pasted_text: text });
+    setPreview(response.preview);
+    setMessage(response.message);
+  }
+
+  return (
+    <section className="form-panel">
+      <h2>AI 解析</h2>
+      <p className="subtle">貼上促銷文字後只會產生待確認預覽；按確認才會入庫，且不會自動抓網頁。</p>
+      <textarea className={styles.textArea} value={text} onChange={(event) => setText(event.target.value)} placeholder="貼上活動公告或促銷文字" />
+      <button className="button" type="button" onClick={() => void parse()} disabled={!text.trim()}>
+        解析文字
+      </button>
+      {message ? <p className="subtle">{message}</p> : null}
+      {preview ? (
+        <div className={styles.previewCard}>
+          <strong>待確認：{sourceProgram.name} → {preview.to_program_name || "未辨識目的地"}</strong>
+          <p>比例 {preview.ratio_from || "?"} : {preview.ratio_to || "?"}，加贈 {preview.bonus_pct || "0"}%</p>
+          <p>{humanThreshold(preview.rule_kind || "linear", preview.block_size, preview.block_bonus_points)}</p>
+          <button
+            className="button button-primary"
+            type="button"
+            disabled={!target || !preview.ratio_from || !preview.ratio_to}
+            onClick={() => submit(() => createTransferRule({
+              from_program_id: sourceProgram.id,
+              to_program_id: Number(target?.id),
+              ratio_from: preview.ratio_from || "0",
+              ratio_to: preview.ratio_to || "0",
+              bonus_pct: preview.bonus_pct || "0",
+              min_transfer: preview.min_transfer || undefined,
+              valid_from: today(),
+              valid_until: preview.valid_until || undefined,
+              transfer_days_note: "AI解析-已人工確認",
+              rule_kind: preview.rule_kind || "linear",
+              block_size: preview.block_size || undefined,
+              block_bonus_points: preview.block_bonus_points || undefined,
+              source_url: preview.source_url || undefined,
+            }), "AI 解析規則已人工確認並加入。")}
+          >
+            確認加入
+          </button>
+          {!target ? <p className="pending-text">目的地計畫尚未存在，請先到「我的點數」新增計畫。</p> : null}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function OtherSourcesPanel({
+  programs,
+  sourcePrograms,
+  pinnedSources,
+  setPinnedSources,
+}: {
+  programs: Program[];
+  sourcePrograms: Program[];
+  pinnedSources: number[];
+  setPinnedSources: (value: number[] | ((current: number[]) => number[])) => void;
+}) {
+  const sourceIds = new Set(sourcePrograms.map((program) => program.id));
+  const candidates = programs.filter((program) => !primaryTabForProgram(program) && sourceIds.has(program.id));
+  return (
+    <section className="panel">
+      <h2>其他來源</h2>
+      <p className="subtle">這裡收納萬里通、萬豪、吉祥以外的來源計畫；可釘選保存偏好。</p>
+      <div className={styles.sourceGrid}>
+        {candidates.map((program) => (
+          <article className={styles.sourceCard} key={program.id}>
+            <h3>{program.name}</h3>
+            <p>{KIND_LABELS.programKind[program.kind] || program.kind}</p>
+            <button
+              className="button"
+              type="button"
+              onClick={() => setPinnedSources((current) => (current.includes(program.id) ? current.filter((id) => id !== program.id) : [...current, program.id]))}
+            >
+              {pinnedSources.includes(program.id) ? "取消釘選" : "釘選來源"}
+            </button>
+          </article>
+        ))}
+        {candidates.length === 0 ? <p className="pending-text">目前沒有其他來源計畫。</p> : null}
+      </div>
+    </section>
+  );
+}
+
+function MyPointsPanel({
   programs,
   accounts,
   portfolio,
@@ -291,7 +717,6 @@ function OwnerPanel({
   updatePrefs,
   submit,
 }: {
-  owner: "kent" | "wife";
   programs: Program[];
   accounts: Account[];
   portfolio: Portfolio | null;
@@ -302,30 +727,102 @@ function OwnerPanel({
   return (
     <>
       <section className="panel">
-        <h2>{OWNER_LABELS[owner]}帳戶</h2>
-        <p className="subtle">這裡只看 {OWNER_LABELS[owner]} 的點數餘額、真實成本與到期日。</p>
-        <Table
-          columns={["計畫", "餘額", "剩餘成本批次", "真實成本", "每點成本", "買分估值", "到期日"]}
-          rows={(portfolio?.accounts || []).map((row) => accountSummaryRow(row).slice(1))}
-        />
+        <h2>我的點數</h2>
+        <p className="subtle">新增交易入口放在每個帳戶旁邊；帳號只存遮罩備註，不存任何登入資訊。</p>
+        <div className={styles.accountList}>
+          {(portfolio?.accounts || []).map((row) => {
+            const account = accounts.find((item) => item.id === Number(row.account_id));
+            if (!account) return null;
+            return (
+              <AccountRow
+                key={account.id}
+                account={account}
+                row={row}
+                prefs={prefs}
+                updatePrefs={updatePrefs}
+                submit={submit}
+              />
+            );
+          })}
+          {(portfolio?.accounts || []).length === 0 ? <p className="pending-text">目前沒有帳戶。</p> : null}
+        </div>
       </section>
 
       <div className={styles.grid}>
-        <ProgramForm prefs={prefs} updatePrefs={updatePrefs} submit={submit} />
-        <AccountForm owner={owner} programs={programs} submit={submit} />
-        <LedgerForm owner={owner} accounts={accounts} programs={programs} prefs={prefs} updatePrefs={updatePrefs} submit={submit} />
+        <ProgramForm submit={submit} />
+        <AccountForm programs={programs} submit={submit} />
       </div>
     </>
   );
 }
 
-function ProgramForm({
+function AccountRow({
+  account,
+  row,
   prefs,
   updatePrefs,
   submit,
 }: {
+  account: Account;
+  row: Record<string, string | number | null>;
   prefs: Preferences;
   updatePrefs: (next: Partial<Preferences>) => void;
+  submit: (action: () => Promise<unknown>, message: string) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <article className={styles.accountRow}>
+      <div>
+        <strong>{OWNER_LABELS[account.owner] || account.owner} · {String(row.program_name)}</strong>
+        <p className="subtle">餘額 {formatNumber(row.balance)}，每點成本 {costPerPoint(row.avg_cost_per_point_twd)}，到期 {String(row.expires_at || "未設定")}</p>
+      </div>
+      <button className="button" type="button" onClick={() => setOpen((value) => !value)}>
+        新增交易
+      </button>
+      {open ? (
+        <FormPanel title="帳本記錄" description="這筆會寫入不可修改帳本；成本批次只在勾選時建立。">
+          {(form) => (
+            <>
+              <select name="kind" value={prefs.kind} onChange={(event) => updatePrefs({ kind: event.target.value })}>
+                {LEDGER_KIND_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+              <input name="quantity" placeholder="點數數量；使用或到期請輸入負數" required />
+              <input name="occurred_at" type="date" defaultValue={today()} required />
+              <input name="cost_total" placeholder="總成本，可留空" />
+              <select name="cost_currency" value={prefs.currency} onChange={(event) => updatePrefs({ currency: event.target.value })}>
+                {CURRENCY_OPTIONS.map((currency) => <option key={currency} value={currency}>{currency}</option>)}
+              </select>
+              <label className={styles.checkboxLine}>
+                <input name="create_lot" type="checkbox" /> 這筆建立成本批次
+              </label>
+              <input name="note" placeholder="備註" />
+              <button
+                className="button button-primary"
+                type="button"
+                onClick={() => submit(() => createLedger({
+                  account_id: account.id,
+                  kind: field(form, "kind"),
+                  quantity: field(form, "quantity"),
+                  occurred_at: field(form, "occurred_at"),
+                  cost_total: field(form, "cost_total") || null,
+                  cost_currency: field(form, "cost_currency") || null,
+                  note: field(form, "note"),
+                  create_lot: field(form, "create_lot") === "on",
+                }), "帳本記錄已新增。")}
+              >
+                儲存交易
+              </button>
+            </>
+          )}
+        </FormPanel>
+      ) : null}
+    </article>
+  );
+}
+
+function ProgramForm({
+  submit,
+}: {
   submit: (action: () => Promise<unknown>, message: string) => Promise<void>;
 }) {
   return (
@@ -334,9 +831,7 @@ function ProgramForm({
         <>
           <input name="name" placeholder="例如 Qatar Avios" required />
           <select name="kind" defaultValue="airline" required>
-            {PROGRAM_KIND_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>{option.label}</option>
-            ))}
+            {PROGRAM_KIND_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
           </select>
           <input name="expiry_rule_note" placeholder="到期規則備註" />
           <button
@@ -357,18 +852,20 @@ function ProgramForm({
 }
 
 function AccountForm({
-  owner,
   programs,
   submit,
 }: {
-  owner: "kent" | "wife";
   programs: Program[];
   submit: (action: () => Promise<unknown>, message: string) => Promise<void>;
 }) {
   return (
-    <FormPanel title={`新增${OWNER_LABELS[owner]}帳戶`} description="在這裡把某個點數計畫掛到持有人名下；帳號只存遮罩備註，不存登入資訊。">
+    <FormPanel title="新增帳戶" description="新增凱章或老婆名下的點數帳戶。">
       {(form) => (
         <>
+          <select name="owner" defaultValue="kent">
+            <option value="kent">凱章</option>
+            <option value="wife">老婆</option>
+          </select>
           <ProgramSelect programs={programs} />
           <input name="account_ref" placeholder="帳號末四碼或備註，不填也可以" />
           <input name="notes" placeholder="帳戶備註" />
@@ -376,7 +873,7 @@ function AccountForm({
             className="button button-primary"
             type="button"
             onClick={() => submit(() => createAccount({
-              owner,
+              owner: field(form, "owner"),
               program_id: Number(field(form, "program_id")),
               account_ref: field(form, "account_ref"),
               notes: field(form, "notes"),
@@ -390,278 +887,7 @@ function AccountForm({
   );
 }
 
-function LedgerForm({
-  owner,
-  accounts,
-  programs,
-  prefs,
-  updatePrefs,
-  submit,
-}: {
-  owner: "kent" | "wife";
-  accounts: Account[];
-  programs: Program[];
-  prefs: Preferences;
-  updatePrefs: (next: Partial<Preferences>) => void;
-  submit: (action: () => Promise<unknown>, message: string) => Promise<void>;
-}) {
-  const selectedProgramId = prefs.programId || String(accounts[0]?.program_id || "");
-  const filteredAccounts = accounts.filter((account) => !selectedProgramId || String(account.program_id) === selectedProgramId);
-
-  return (
-    <FormPanel title={`${OWNER_LABELS[owner]}帳本記錄`} description="在這裡記錄點數的取得或使用，每一筆都會留下不可修改的帳本記錄。">
-      {(form) => (
-        <>
-          <ProgramSelect
-            programs={programsForAccounts(programs, accounts)}
-            value={selectedProgramId}
-            onChange={(value) => updatePrefs({ programId: value })}
-          />
-          <select name="account_id" required>
-            <option value="">選擇帳戶</option>
-            {filteredAccounts.map((account) => (
-              <option key={account.id} value={account.id}>{OWNER_LABELS[owner]} · {programName(programs, account.program_id)}</option>
-            ))}
-          </select>
-          <select name="kind" value={prefs.kind} onChange={(event) => updatePrefs({ kind: event.target.value })} required>
-            {LEDGER_KIND_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>{option.label}</option>
-            ))}
-          </select>
-          <input name="quantity" placeholder="點數數量；使用或到期請輸入負數" required />
-          <input name="occurred_at" type="date" defaultValue={today()} required />
-          <input name="cost_total" placeholder="總成本，可留空" />
-          <select name="cost_currency" value={prefs.currency} onChange={(event) => updatePrefs({ currency: event.target.value })}>
-            {CURRENCY_OPTIONS.map((currency) => (
-              <option key={currency} value={currency}>{currency}</option>
-            ))}
-          </select>
-          <label className={styles.checkboxLine}>
-            <input name="create_lot" type="checkbox" /> 這筆建立成本批次
-          </label>
-          <input name="note" placeholder="備註" />
-          <button
-            className="button button-primary"
-            type="button"
-            onClick={() => submit(() => createLedger({
-              account_id: Number(field(form, "account_id")),
-              kind: field(form, "kind"),
-              quantity: field(form, "quantity"),
-              occurred_at: field(form, "occurred_at"),
-              cost_total: field(form, "cost_total") || null,
-              cost_currency: field(form, "cost_currency") || null,
-              note: field(form, "note"),
-              create_lot: field(form, "create_lot") === "on",
-            }), "帳本記錄已新增。")}
-          >
-            新增帳本
-          </button>
-        </>
-      )}
-    </FormPanel>
-  );
-}
-
-function TransferRulesPanel({
-  programs,
-  rules,
-  fromFilter,
-  toFilter,
-  setFromFilter,
-  setToFilter,
-  prefs,
-  updatePrefs,
-  submit,
-}: {
-  programs: Program[];
-  rules: TransferRule[];
-  fromFilter: string;
-  toFilter: string;
-  setFromFilter: (value: string) => void;
-  setToFilter: (value: string) => void;
-  prefs: Preferences;
-  updatePrefs: (next: Partial<Preferences>) => void;
-  submit: (action: () => Promise<unknown>, message: string) => Promise<void>;
-}) {
-  const fromProgramIds = Array.from(new Set(rules.map((rule) => rule.from_program_id)));
-  const activeFromFilter = fromFilter || String(fromProgramIds[0] || "");
-  const visibleRules = rules.filter((rule) => {
-    if (activeFromFilter && String(rule.from_program_id) !== activeFromFilter) return false;
-    if (toFilter && String(rule.to_program_id) !== toFilter) return false;
-    return true;
-  });
-
-  return (
-    <>
-      <section className="panel">
-        <h2>轉點規則</h2>
-        <p className="subtle">這裡用人話顯示轉點比例、加贈與有效期，比例統一寫成「送出 → 實得」。</p>
-        <div className={styles.tabs} role="tablist" aria-label="來源計畫">
-          {fromProgramIds.length === 0 ? (
-            <span className="pending-text">目前沒有來源計畫。</span>
-          ) : (
-            fromProgramIds.map((programId) => (
-              <button
-                className={`button ${activeFromFilter === String(programId) ? "button-primary" : ""}`}
-                key={programId}
-                type="button"
-                onClick={() => setFromFilter(String(programId))}
-              >
-                {programName(programs, programId)}
-              </button>
-            ))
-          )}
-        </div>
-        <div className={styles.filterRow}>
-          <ProgramSelect programs={programs} name="to_filter" value={toFilter} onChange={setToFilter} includeAll allLabel="全部目的地" />
-        </div>
-        <div className={styles.ruleList}>
-          {visibleRules.length === 0 ? (
-            <p className="pending-text">目前沒有符合條件的轉點規則。</p>
-          ) : (
-            visibleRules.map((rule) => (
-              <div className={styles.ruleSentence} key={rule.id}>
-                <span>{transferSentence(rule, programs)}</span>
-                {rule.source_url ? (
-                  <a href={rule.source_url} target="_blank" rel="noreferrer">查證</a>
-                ) : null}
-              </div>
-            ))
-          )}
-        </div>
-      </section>
-
-      <FormPanel title="新增轉點規則" description="在這裡維護銀行點、飯店點、航空哩程之間的固定轉換規則。">
-        {(form) => (
-          <>
-            <ProgramSelect programs={programs} name="from_program_id" value={prefs.programId} onChange={(value) => updatePrefs({ programId: value })} />
-            <ProgramSelect programs={programs} name="to_program_id" />
-            <select name="rule_kind" defaultValue="linear">
-              <option value="linear">一般比例</option>
-              <option value="threshold_block">滿額加贈</option>
-            </select>
-            <input name="ratio_from" placeholder="送出數量，例如 30000" required />
-            <input name="ratio_to" placeholder="基礎實得，例如 10000" required />
-            <input name="bonus_pct" placeholder="加贈百分比，例如 20" />
-            <input name="min_transfer" placeholder="最低轉出點數，可留空" />
-            <input name="block_size" placeholder="滿額門檻，例如 60000" />
-            <input name="block_bonus_points" placeholder="滿額加贈點數，例如 5000" />
-            <input name="valid_from" type="date" defaultValue={today()} required />
-            <input name="valid_until" type="date" />
-            <input name="transfer_days_note" placeholder="處理天數或備註" />
-            <input name="source_url" placeholder="查證網址，可留空" />
-            <button
-              className="button button-primary"
-              type="button"
-              onClick={() => submit(() => createTransferRule({
-                from_program_id: Number(field(form, "from_program_id")),
-                to_program_id: Number(field(form, "to_program_id")),
-                ratio_from: field(form, "ratio_from"),
-                ratio_to: field(form, "ratio_to"),
-                bonus_pct: field(form, "bonus_pct") || "0",
-                min_transfer: field(form, "min_transfer") || undefined,
-                valid_from: field(form, "valid_from"),
-                valid_until: field(form, "valid_until") || undefined,
-                transfer_days_note: field(form, "transfer_days_note"),
-                rule_kind: field(form, "rule_kind"),
-                block_size: field(form, "block_size") || undefined,
-                block_bonus_points: field(form, "block_bonus_points") || undefined,
-                source_url: field(form, "source_url") || undefined,
-              }), "轉點規則已新增。")}
-            >
-              新增規則
-            </button>
-          </>
-        )}
-      </FormPanel>
-    </>
-  );
-}
-
-function PurchaseOffersPanel({
-  programs,
-  offers,
-  prefs,
-  updatePrefs,
-  submit,
-}: {
-  programs: Program[];
-  offers: PurchaseOffer[];
-  prefs: Preferences;
-  updatePrefs: (next: Partial<Preferences>) => void;
-  submit: (action: () => Promise<unknown>, message: string) => Promise<void>;
-}) {
-  return (
-    <>
-      <section className="panel">
-        <h2>買分價格</h2>
-        <p className="subtle">這裡記錄官方、活動或手動查到的買分價格；每點成本會統一成新台幣格式比較。</p>
-        <Table
-          columns={["計畫", "類型", "原始價格", "加贈", "每點成本", "來源"]}
-          rows={offers.map((offer) => [
-            programName(programs, offer.program_id),
-            KIND_LABELS.offerKind[offer.kind] || offer.kind,
-            `${formatNumber(offer.base_price)} ${offer.currency}`,
-            `${formatNumber(offer.bonus_pct)}%`,
-            costPerPoint(offer.effective_cpp),
-            offer.source_url ? `查證：${offer.source_url}` : offer.source_note || "未填寫",
-          ])}
-        />
-      </section>
-
-      <FormPanel title="新增買分價格" description="在這裡手動維護買分價格；TripPlus 仍是手動資料，不做爬蟲。">
-        {(form) => (
-          <>
-            <ProgramSelect programs={programs} value={prefs.programId} onChange={(value) => updatePrefs({ programId: value })} />
-            <select name="kind" defaultValue="official">
-              <option value="official">官方</option>
-              <option value="promo">活動</option>
-              <option value="third_party">第三方手動</option>
-            </select>
-            <input name="base_price" placeholder="每點原始價格" required />
-            <select name="currency" value={prefs.currency} onChange={(event) => updatePrefs({ currency: event.target.value })}>
-              {CURRENCY_OPTIONS.map((currency) => (
-                <option key={currency} value={currency}>{currency}</option>
-              ))}
-            </select>
-            <input name="bonus_pct" placeholder="加贈百分比" />
-            <input name="paid_amount" placeholder="實付金額，可留空" />
-            <input name="fees" placeholder="手續費，可留空" />
-            <input name="rebate" placeholder="回饋，可留空" />
-            <input name="points_received" placeholder="實際入帳點數，可留空" />
-            <input name="start_date" type="date" defaultValue={today()} required />
-            <input name="end_date" type="date" />
-            <input name="source_note" placeholder="來源備註" />
-            <input name="source_url" placeholder="查證網址，可留空" />
-            <button
-              className="button button-primary"
-              type="button"
-              onClick={() => submit(() => createPurchaseOffer({
-                program_id: Number(field(form, "program_id")),
-                kind: field(form, "kind"),
-                base_price: field(form, "base_price"),
-                currency: field(form, "currency"),
-                bonus_pct: field(form, "bonus_pct") || "0",
-                start_date: field(form, "start_date"),
-                end_date: field(form, "end_date") || undefined,
-                source_note: field(form, "source_note"),
-                paid_amount: field(form, "paid_amount") || undefined,
-                fees: field(form, "fees") || undefined,
-                rebate: field(form, "rebate") || undefined,
-                points_received: field(form, "points_received") || undefined,
-                source_url: field(form, "source_url") || undefined,
-              }), "買分價格已新增。")}
-            >
-              新增價格
-            </button>
-          </>
-        )}
-      </FormPanel>
-    </>
-  );
-}
-
-function FormPanel({ title, description, children }: { title: string; description: string; children: (form: HTMLFormElement) => ReactNode }) {
+function FormPanel({ title, description, children }: { title: string; description: string; children: (form: HTMLFormElement) => React.ReactNode }) {
   const [form, setForm] = useState<HTMLFormElement | null>(null);
   return (
     <form
@@ -678,27 +904,11 @@ function FormPanel({ title, description, children }: { title: string; descriptio
   );
 }
 
-function ProgramSelect({
-  programs,
-  name = "program_id",
-  value,
-  onChange,
-  includeAll = false,
-  allLabel = "全部",
-}: {
-  programs: Program[];
-  name?: string;
-  value?: string;
-  onChange?: (value: string) => void;
-  includeAll?: boolean;
-  allLabel?: string;
-}) {
+function ProgramSelect({ programs, name = "program_id" }: { programs: Program[]; name?: string }) {
   return (
-    <select name={name} value={value} onChange={(event) => onChange?.(event.target.value)} required={!includeAll}>
-      {includeAll ? <option value="">{allLabel}</option> : <option value="">選擇計畫</option>}
-      {programs.map((program) => (
-        <option key={program.id} value={program.id}>{program.name}</option>
-      ))}
+    <select name={name} required>
+      <option value="">選擇計畫</option>
+      {programs.map((program) => <option key={program.id} value={program.id}>{program.name}</option>)}
     </select>
   );
 }
@@ -721,55 +931,118 @@ function Table({ columns, rows }: { columns: string[]; rows: string[][] }) {
   );
 }
 
-function accountSummaryRow(row: Record<string, string | number | null>): string[] {
-  return [
-    ownerLabel(String(row.owner)),
-    String(row.program_name),
-    formatNumber(row.balance),
-    formatNumber(row.remaining_lot_quantity),
-    formatMoney(row.real_cost_basis_twd),
-    costPerPoint(row.avg_cost_per_point_twd),
-    row.market_value_twd ? formatMoney(row.market_value_twd) : "未設定",
-    String(row.expires_at || "未設定"),
-  ];
+function editableRule(rule: TransferRule): EditableRule {
+  return {
+    from_program_id: String(rule.from_program_id),
+    to_program_id: String(rule.to_program_id),
+    ratio_from: rule.ratio_from,
+    ratio_to: rule.ratio_to,
+    bonus_pct: rule.bonus_pct,
+    min_transfer: rule.min_transfer || "",
+    valid_from: rule.valid_from,
+    valid_until: rule.valid_until || "",
+    transfer_days_note: rule.transfer_days_note || "",
+    rule_kind: rule.rule_kind || "linear",
+    block_size: rule.block_size || "",
+    block_bonus_points: rule.block_bonus_points || "",
+    source_url: rule.source_url || "",
+  };
 }
 
-function transferSentence(rule: TransferRule, programs: Program[]): string {
-  const fromName = programName(programs, rule.from_program_id);
-  const toName = programName(programs, rule.to_program_id);
-  const ratioFrom = Number(rule.ratio_from);
-  const ratioTo = Number(rule.ratio_to);
-  const sent = ratioFrom < 1000 ? ratioFrom * 10000 : ratioFrom;
-  const base = ratioFrom > 0 ? (sent / ratioFrom) * ratioTo : 0;
-  const bonus = Number(rule.bonus_pct || 0);
+function transferRulePayload(draft: EditableRule) {
+  return {
+    from_program_id: Number(draft.from_program_id),
+    to_program_id: Number(draft.to_program_id),
+    ratio_from: draft.ratio_from,
+    ratio_to: draft.ratio_to,
+    bonus_pct: draft.bonus_pct || "0",
+    min_transfer: draft.min_transfer || undefined,
+    valid_from: draft.valid_from || today(),
+    valid_until: draft.valid_until || undefined,
+    transfer_days_note: draft.transfer_days_note,
+    rule_kind: draft.rule_kind || "linear",
+    block_size: draft.block_size || undefined,
+    block_bonus_points: draft.block_bonus_points || undefined,
+    source_url: draft.source_url || undefined,
+  };
+}
+
+function calculateRequiredSourcePoints(rule: TransferRule, targetPoints: number): { requiredSourcePoints: number; receivedPoints: number } {
+  if (!targetPoints || targetPoints <= 0) return { requiredSourcePoints: 0, receivedPoints: 0 };
+  const ratioFrom = Number(rule.ratio_from || 0);
+  const ratioTo = Number(rule.ratio_to || 0);
+  if (!ratioFrom || !ratioTo) return { requiredSourcePoints: 0, receivedPoints: 0 };
+  let source = Math.ceil((targetPoints / ratioTo) * ratioFrom);
+  const minTransfer = Number(rule.min_transfer || 0);
+  if (minTransfer > source) source = minTransfer;
+  const step = ratioFrom > 0 ? ratioFrom : 1;
+  source = Math.ceil(source / step) * step;
+  let received = pointsReceived(rule, source);
+  let guard = 0;
+  while (received < targetPoints && guard < 10000) {
+    source += step;
+    received = pointsReceived(rule, source);
+    guard += 1;
+  }
+  return { requiredSourcePoints: source, receivedPoints: received };
+}
+
+function pointsReceived(rule: TransferRule, sourcePoints: number): number {
+  const ratioFrom = Number(rule.ratio_from || 0);
+  const ratioTo = Number(rule.ratio_to || 0);
+  if (!ratioFrom || !ratioTo) return 0;
+  const base = Math.floor(sourcePoints / ratioFrom) * ratioTo;
+  const bonus = Math.floor(base * (Number(rule.bonus_pct || 0) / 100));
   if (rule.rule_kind === "threshold_block") {
     const blockSize = Number(rule.block_size || 0);
     const blockBonus = Number(rule.block_bonus_points || 0);
-    const blockText = blockSize && blockBonus ? `每滿 ${formatNumber(blockSize)} 額外送 ${formatNumber(blockBonus)} 點,` : "";
-    return `${fromName} → ${toName}:${formatNumber(sent)} → ${formatNumber(base)}(${formatNumber(ratioFrom)}:${formatNumber(ratioTo)},${blockText}有效至 ${rule.valid_until || "未設定"})`;
+    return base + bonus + (blockSize && blockBonus ? Math.floor(sourcePoints / blockSize) * blockBonus : 0);
   }
-  const received = Math.round(base * (1 + bonus / 100));
-  const bonusText = bonus > 0 ? `,+${formatNumber(bonus)}% 加贈, 實得 ${formatNumber(received)}` : `,實得 ${formatNumber(received)}`;
-  const until = rule.valid_until || "未設定";
-  return `${fromName} → ${toName}:${formatNumber(sent)} → ${formatNumber(base)}(${formatNumber(ratioFrom / ratioTo)}:1${bonusText};有效至 ${until})`;
+  return base + bonus;
 }
 
-function programsForAccounts(programs: Program[], accounts: Account[]): Program[] {
-  const accountProgramIds = new Set(accounts.map((account) => account.program_id));
-  return programs.filter((program) => accountProgramIds.has(program.id));
+function ruleRatioText(rule: TransferRule): string {
+  return `${formatNumber(rule.ratio_from)}:${formatNumber(rule.ratio_to)}${Number(rule.bonus_pct || 0) > 0 ? ` +${formatNumber(rule.bonus_pct)}%` : ""}`;
+}
+
+function humanThreshold(kind: string, blockSize?: string | null, blockBonus?: string | null): string {
+  if (kind !== "threshold_block") return "一般比例";
+  if (!blockSize || !blockBonus) return "滿額加贈，門檻未完整";
+  return `每滿 ${formatNumber(blockSize)} 送 ${formatNumber(blockBonus)} 點`;
+}
+
+function ownerBalances(portfolio: Portfolio | null, programId: number): { kent: number; wife: number } {
+  const result = { kent: 0, wife: 0 };
+  for (const row of portfolio?.accounts || []) {
+    if (Number(row.program_id) !== programId) continue;
+    if (row.owner === "kent") result.kent += Number(row.balance || 0);
+    if (row.owner === "wife") result.wife += Number(row.balance || 0);
+  }
+  return result;
+}
+
+function sourceAvgCost(portfolio: Portfolio | null, programId: number): string {
+  const costs = (portfolio?.accounts || [])
+    .filter((row) => Number(row.program_id) === programId && row.avg_cost_per_point_twd)
+    .map((row) => Number(row.avg_cost_per_point_twd));
+  if (costs.length === 0) return "";
+  return String(costs.reduce((sum, value) => sum + value, 0) / costs.length);
+}
+
+function findProgramByAliases(programs: Program[], aliases: string[]): Program | null {
+  return programs.find((program) => aliases.some((alias) => program.name.toLowerCase().includes(alias.toLowerCase()))) || null;
+}
+
+function primaryTabForProgram(program: Program): WalletTab | null {
+  for (const item of PRIMARY_SOURCE_TABS) {
+    if (item.aliases.some((alias) => program.name.toLowerCase().includes(alias.toLowerCase()))) return item.tab;
+  }
+  return null;
 }
 
 function field(form: HTMLFormElement, name: string): string {
   const value = new FormData(form).get(name);
   return typeof value === "string" ? value.trim() : "";
-}
-
-function programName(programs: Program[], id: number): string {
-  return programs.find((program) => program.id === id)?.name || `計畫 #${id}`;
-}
-
-function ownerLabel(value: string): string {
-  return OWNER_LABELS[value] || value;
 }
 
 function formatMoney(value: unknown): string {

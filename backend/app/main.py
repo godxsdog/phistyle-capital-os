@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import date
 from decimal import Decimal
 from typing import Any
@@ -38,6 +39,7 @@ from shared.models.knowledge import (
     StorageBackend,
 )
 from shared.models.human_review import HumanReviewDecision
+from shared.models.point_wallet import PointProgram, TransferRule
 from shared.models.triage import TriageRecommendation, TriageResult, TriageRiskLevel
 from shared.services.brain_review_service import (
     create_brain_review,
@@ -493,6 +495,32 @@ class TransferRuleResponse(BaseModel):
     block_size: str | None
     block_bonus_points: str | None
     source_url: str | None
+
+
+class WalletAiParseRuleRequest(BaseModel):
+    source_program_name: str
+    pasted_text: str
+
+
+class WalletAiParsedRule(BaseModel):
+    from_program_name: str | None = None
+    to_program_name: str | None = None
+    ratio_from: str | None = None
+    ratio_to: str | None = None
+    bonus_pct: str | None = None
+    min_transfer: str | None = None
+    rule_kind: str | None = None
+    block_size: str | None = None
+    block_bonus_points: str | None = None
+    valid_until: str | None = None
+    source_url: str | None = None
+    note: str | None = None
+
+
+class WalletAiParseRuleResponse(BaseModel):
+    status: str
+    preview: WalletAiParsedRule | None
+    message: str
 
 
 class PurchaseOfferRequest(BaseModel):
@@ -966,6 +994,62 @@ def post_wallet_transfer_rule(
     except PointWalletNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return _transfer_rule_response(row)
+
+
+@app.patch("/wallet/transfer-rules/{rule_id}", response_model=TransferRuleResponse)
+def patch_wallet_transfer_rule(
+    rule_id: int,
+    request: TransferRuleRequest,
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    row = session.get(TransferRule, rule_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"Unknown transfer_rule_id: {rule_id}")
+    try:
+        _require_wallet_program(session, request.from_program_id)
+        _require_wallet_program(session, request.to_program_id)
+        row.from_program_id = request.from_program_id
+        row.to_program_id = request.to_program_id
+        row.ratio_from = request.ratio_from
+        row.ratio_to = request.ratio_to
+        row.bonus_pct = request.bonus_pct
+        row.min_transfer = request.min_transfer
+        row.transfer_days_note = request.transfer_days_note
+        row.valid_from = request.valid_from
+        row.valid_until = request.valid_until
+        row.rule_kind = request.rule_kind
+        row.block_size = request.block_size
+        row.block_bonus_points = request.block_bonus_points
+        row.source_url = request.source_url
+        session.commit()
+    except PointWalletNotFoundError as exc:
+        session.rollback()
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return _transfer_rule_response(row)
+
+
+@app.delete("/wallet/transfer-rules/{rule_id}")
+def delete_wallet_transfer_rule(
+    rule_id: int,
+    session: Session = Depends(get_session),
+) -> dict[str, str]:
+    row = session.get(TransferRule, rule_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"Unknown transfer_rule_id: {rule_id}")
+    session.delete(row)
+    session.commit()
+    return {"status": "deleted"}
+
+
+@app.post("/wallet/ai-parse-rule", response_model=WalletAiParseRuleResponse)
+def post_wallet_ai_parse_rule(request: WalletAiParseRuleRequest) -> dict[str, Any]:
+    if not request.pasted_text.strip():
+        raise HTTPException(status_code=422, detail="請貼上促銷文字或公告內容")
+    parsed = _parse_wallet_rule_with_deepseek(request.source_program_name, request.pasted_text)
+    if parsed is None:
+        return {"status": "failed", "preview": None, "message": "解析失敗，請手動輸入"}
+    parsed["note"] = "AI解析-待確認"
+    return {"status": "preview", "preview": parsed, "message": "已解析成待確認規則，請人工確認後再加入"}
 
 
 @app.get("/wallet/purchase-offers", response_model=list[PurchaseOfferResponse])
@@ -1599,6 +1683,61 @@ def _capital_decision_summary_response(summary) -> dict[str, Any]:
         },
         "requires_human_review": summary.requires_human_review,
     }
+
+
+def _parse_wallet_rule_with_deepseek(source_program_name: str, pasted_text: str) -> dict[str, str | None] | None:
+    prompt = (
+        "你是點數轉點規則解析器。只根據使用者貼上的文字輸出嚴格 JSON，"
+        "不得猜測文字中沒有的比例或期限。JSON 欄位只能包含："
+        "from_program_name,to_program_name,ratio_from,ratio_to,bonus_pct,min_transfer,"
+        "rule_kind,block_size,block_bonus_points,valid_until,source_url,note。"
+        "rule_kind 只能是 linear 或 threshold_block。沒有資料填 null。"
+        f"\n來源計畫：{source_program_name}\n貼上文字：\n{pasted_text}"
+    )
+    response = DeepSeekProvider().chat(LLMRequest(role=ModelRole.SUMMARIZER, prompt=prompt))
+    if response.dry_run:
+        return None
+    try:
+        payload = json.loads(response.content)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    allowed = {
+        "from_program_name",
+        "to_program_name",
+        "ratio_from",
+        "ratio_to",
+        "bonus_pct",
+        "min_transfer",
+        "rule_kind",
+        "block_size",
+        "block_bonus_points",
+        "valid_until",
+        "source_url",
+        "note",
+    }
+    parsed = {key: _optional_string(payload.get(key)) for key in allowed}
+    if not parsed.get("ratio_from") or not parsed.get("ratio_to") or not parsed.get("to_program_name"):
+        return None
+    parsed["from_program_name"] = parsed.get("from_program_name") or source_program_name
+    parsed["bonus_pct"] = parsed.get("bonus_pct") or "0"
+    parsed["rule_kind"] = parsed.get("rule_kind") or "linear"
+    return parsed
+
+
+def _require_wallet_program(session: Session, program_id: int) -> PointProgram:
+    row = session.get(PointProgram, program_id)
+    if row is None:
+        raise PointWalletNotFoundError(f"Unknown program_id: {program_id}")
+    return row
+
+
+def _optional_string(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
 
 
 def _import_batch_response(batch) -> dict[str, Any]:

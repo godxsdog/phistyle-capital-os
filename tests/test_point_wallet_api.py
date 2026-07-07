@@ -124,6 +124,69 @@ def test_wallet_transfer_rule_offer_fx_and_registry_contract(monkeypatch):
     assert wallet["route"] == "/wallet"
 
 
+def test_wallet_transfer_rule_update_delete_and_ai_preview(monkeypatch):
+    client = make_client()
+    wanlitong = client.post("/wallet/programs", json={"name": "平安萬里通", "kind": "bank"}).json()
+    aeroplan = client.post("/wallet/programs", json={"name": "Aeroplan", "kind": "airline"}).json()
+    rule = client.post(
+        "/wallet/transfer-rules",
+        json={
+            "from_program_id": wanlitong["id"],
+            "to_program_id": aeroplan["id"],
+            "ratio_from": "3",
+            "ratio_to": "1",
+            "valid_from": "2026-07-06",
+        },
+    ).json()
+
+    updated = client.patch(
+        f"/wallet/transfer-rules/{rule['id']}",
+        json={
+            "from_program_id": wanlitong["id"],
+            "to_program_id": aeroplan["id"],
+            "ratio_from": "35",
+            "ratio_to": "1",
+            "bonus_pct": "0",
+            "valid_from": "2026-07-06",
+            "source_url": "https://example.test/verified",
+        },
+    )
+
+    def fake_parse(source_program_name, pasted_text):
+        assert source_program_name == "平安萬里通"
+        assert "加贈" in pasted_text
+        return {
+            "from_program_name": "平安萬里通",
+            "to_program_name": "Aeroplan",
+            "ratio_from": "30000",
+            "ratio_to": "10000",
+            "bonus_pct": "20",
+            "min_transfer": None,
+            "rule_kind": "linear",
+            "block_size": None,
+            "block_bonus_points": None,
+            "valid_until": "2026-08-31",
+            "source_url": "https://example.test/promo",
+            "note": None,
+        }
+
+    monkeypatch.setattr("backend.app.main._parse_wallet_rule_with_deepseek", fake_parse)
+    preview = client.post(
+        "/wallet/ai-parse-rule",
+        json={"source_program_name": "平安萬里通", "pasted_text": "Aeroplan 轉點加贈 20%"},
+    )
+    deleted = client.delete(f"/wallet/transfer-rules/{rule['id']}")
+
+    assert updated.status_code == 200
+    assert updated.json()["ratio_from"] == "35.00"
+    assert updated.json()["source_url"] == "https://example.test/verified"
+    assert preview.status_code == 200
+    assert preview.json()["status"] == "preview"
+    assert preview.json()["preview"]["note"] == "AI解析-待確認"
+    assert deleted.status_code == 200
+    assert client.get("/wallet/transfer-rules").json() == []
+
+
 def test_wallet_award_quote_evaluate_endpoint_is_read_only_for_lots():
     client = make_client()
     wanlitong = client.post("/wallet/programs", json={"name": "平安萬里通", "kind": "bank"}).json()

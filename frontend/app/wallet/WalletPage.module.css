@@ -4,6 +4,13 @@
   flex-wrap: wrap;
 }
 
+.primaryNav {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+
 .grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -37,11 +44,179 @@
   line-height: 1.5;
 }
 
+.sourceHero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 220px;
+  gap: 16px;
+  align-items: end;
+  margin-bottom: 18px;
+}
+
+.inlineField,
 .checkboxLine {
   display: flex;
   align-items: center;
   gap: 8px;
   color: var(--muted);
+}
+
+.inlineField {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.sourceGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.sourceCard,
+.previewCard,
+.accountRow,
+.emptyState {
+  border: 1px solid var(--line);
+  background: #f9fbfb;
+  padding: 14px;
+}
+
+.sourceCard {
+  display: grid;
+  gap: 8px;
+}
+
+.sectionHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.emptyState {
+  display: grid;
+  gap: 6px;
+}
+
+.transferTable {
+  display: grid;
+  gap: 8px;
+}
+
+.transferHead,
+.transferRow {
+  display: grid;
+  grid-template-columns: 1.1fr 1fr 0.55fr 1.4fr 1.25fr 0.9fr;
+  gap: 8px;
+  align-items: start;
+}
+
+.transferHead {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.transferRow {
+  border: 1px solid var(--line);
+  background: #fff;
+  padding: 10px;
+}
+
+.compactInputs {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.compactInputs input {
+  min-width: 0;
+}
+
+.rowActions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.inlineCalc {
+  display: grid;
+  grid-template-columns: auto minmax(180px, 1fr) 160px auto;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.textArea {
+  min-height: 140px;
+  resize: vertical;
+}
+
+.accountList {
+  display: grid;
+  gap: 12px;
+}
+
+.accountRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+}
+
+.awardLine {
+  display: grid;
+  grid-template-columns: auto minmax(150px, 1fr) 110px auto 110px 100px auto 140px auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.winnerPanel {
+  border: 1px solid #d7b46a;
+  background: #fff9e8;
+  padding: 18px;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+}
+
+.winnerPanel strong {
+  font-size: 28px;
+}
+
+.awardTable {
+  display: grid;
+  gap: 8px;
+}
+
+.awardHead,
+.awardRow {
+  display: grid;
+  grid-template-columns: 90px minmax(220px, 1fr) 130px 130px 110px 90px;
+  gap: 8px;
+  align-items: center;
+}
+
+.awardHead {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.awardRow {
+  border: 1px solid var(--line);
+  background: #fff;
+  padding: 10px;
+}
+
+.awardDetail {
+  grid-column: 1 / -1;
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+}
+
+.checkboxLine {
+  flex-direction: row;
 }
 
 .tableWrap {
@@ -72,7 +247,26 @@
 
 @media (max-width: 760px) {
   .grid,
-  .filterRow {
+  .filterRow,
+  .sourceHero,
+  .sourceGrid,
+  .transferHead,
+  .transferRow,
+  .inlineCalc,
+  .accountRow,
+  .awardLine,
+  .awardHead,
+  .awardRow {
     grid-template-columns: 1fr;
+  }
+
+  .transferHead,
+  .awardHead {
+    display: none;
+  }
+
+  .winnerPanel {
+    align-items: stretch;
+    flex-direction: column;
   }
 }

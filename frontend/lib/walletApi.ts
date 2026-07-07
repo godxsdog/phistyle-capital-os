@@ -46,6 +46,27 @@ export type TransferRule = {
   source_url: string | null;
 };
 
+export type WalletAiParsedRule = {
+  from_program_name: string | null;
+  to_program_name: string | null;
+  ratio_from: string | null;
+  ratio_to: string | null;
+  bonus_pct: string | null;
+  min_transfer: string | null;
+  rule_kind: string | null;
+  block_size: string | null;
+  block_bonus_points: string | null;
+  valid_until: string | null;
+  source_url: string | null;
+  note: string | null;
+};
+
+export type WalletAiParseRuleResponse = {
+  status: "preview" | "failed" | string;
+  preview: WalletAiParsedRule | null;
+  message: string;
+};
+
 export type PurchaseOffer = {
   id: number;
   program_id: number;
@@ -159,6 +180,35 @@ export async function createTransferRule(payload: {
   source_url?: string;
 }): Promise<TransferRule> {
   return requestJson<TransferRule>("/wallet/transfer-rules", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export async function updateTransferRule(id: number, payload: {
+  from_program_id: number;
+  to_program_id: number;
+  ratio_from: string;
+  ratio_to: string;
+  bonus_pct?: string;
+  min_transfer?: string;
+  valid_from: string;
+  valid_until?: string;
+  transfer_days_note?: string;
+  rule_kind?: string;
+  block_size?: string;
+  block_bonus_points?: string;
+  source_url?: string;
+}): Promise<TransferRule> {
+  return requestJson<TransferRule>(`/wallet/transfer-rules/${id}`, { method: "PATCH", body: JSON.stringify(payload) });
+}
+
+export async function deleteTransferRule(id: number): Promise<{ status: string }> {
+  return requestJson<{ status: string }>(`/wallet/transfer-rules/${id}`, { method: "DELETE" });
+}
+
+export async function parseWalletRuleWithAi(payload: {
+  source_program_name: string;
+  pasted_text: string;
+}): Promise<WalletAiParseRuleResponse> {
+  return requestJson<WalletAiParseRuleResponse>("/wallet/ai-parse-rule", { method: "POST", body: JSON.stringify(payload) });
 }
 
 export async function listPurchaseOffers(): Promise<PurchaseOffer[]> {

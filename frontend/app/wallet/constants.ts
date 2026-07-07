@@ -1,11 +1,12 @@
-export type WalletTab = "overview" | "kent" | "wife" | "transferRules" | "purchaseOffers";
+export type WalletTab = "overview" | "wanlitong" | "marriott" | "juneyao" | "otherSources" | "points";
 
 export const TAB_LABELS: Record<WalletTab, string> = {
   overview: "總覽",
-  kent: "凱章",
-  wife: "老婆",
-  transferRules: "轉點規則",
-  purchaseOffers: "買分價格",
+  wanlitong: "萬里通",
+  marriott: "萬豪",
+  juneyao: "吉祥",
+  otherSources: "其他來源",
+  points: "我的點數",
 };
 
 export const OWNER_LABELS: Record<string, string> = {
