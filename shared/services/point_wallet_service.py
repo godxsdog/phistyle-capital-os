@@ -211,6 +211,9 @@ def create_transfer_rule(
     transfer_days_note: str | None = None,
     valid_from: date,
     valid_until: date | None = None,
+    rule_kind: str = "linear",
+    block_size: Decimal | None = None,
+    block_bonus_points: Decimal | None = None,
 ) -> TransferRule:
     _require_program(session, from_program_id)
     _require_program(session, to_program_id)
@@ -224,6 +227,9 @@ def create_transfer_rule(
         transfer_days_note=transfer_days_note,
         valid_from=valid_from,
         valid_until=valid_until,
+        rule_kind=rule_kind,
+        block_size=block_size,
+        block_bonus_points=block_bonus_points,
     )
     session.add(row)
     _commit(session)
@@ -247,9 +253,13 @@ def create_purchase_offer(
     start_date: date,
     end_date: date | None = None,
     source_note: str | None = None,
+    paid_amount: Decimal | None = None,
+    fees: Decimal | None = None,
+    rebate: Decimal | None = None,
+    points_received: Decimal | None = None,
 ) -> PurchaseOffer:
     _require_program(session, program_id)
-    effective_cpp = _effective_cpp(base_price, bonus_pct)
+    effective_cpp = _effective_cpp(base_price, bonus_pct, paid_amount, fees, rebate, points_received)
     row = PurchaseOffer(
         program_id=program_id,
         kind=_required(kind, "kind"),
@@ -262,6 +272,10 @@ def create_purchase_offer(
         start_date=start_date,
         end_date=end_date,
         source_note=source_note,
+        paid_amount=paid_amount,
+        fees=fees,
+        rebate=rebate,
+        points_received=points_received,
     )
     session.add(row)
     _commit(session)
@@ -387,7 +401,22 @@ def _cost_per_point(total_cost: Decimal, quantity: Decimal) -> Decimal:
     return (total_cost / quantity).quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP)
 
 
-def _effective_cpp(base_price: Decimal, bonus_pct: Decimal) -> Decimal:
+def _effective_cpp(
+    base_price: Decimal,
+    bonus_pct: Decimal,
+    paid_amount: Decimal | None = None,
+    fees: Decimal | None = None,
+    rebate: Decimal | None = None,
+    points_received: Decimal | None = None,
+) -> Decimal:
+    if (
+        paid_amount is not None
+        and fees is not None
+        and rebate is not None
+        and points_received is not None
+        and points_received > 0
+    ):
+        return ((paid_amount + fees - rebate) / points_received).quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP)
     multiplier = Decimal("1") + (bonus_pct / Decimal("100"))
     return (base_price / multiplier).quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP)
 

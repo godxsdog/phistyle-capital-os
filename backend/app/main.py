@@ -80,6 +80,13 @@ from shared.services.human_review_service import (
     review_decision_log,
 )
 from shared.services.exchange_rate_service import list_fx_rates, refresh_fx_rates
+from shared.services.award_cost_engine import (
+    create_award_quote,
+    evaluate_award_quote,
+    get_award_quote,
+    list_award_quotes,
+    list_funding_scenarios,
+)
 from shared.services.point_wallet_service import (
     PointWalletError,
     PointWalletNotFoundError,
@@ -465,6 +472,9 @@ class TransferRuleRequest(BaseModel):
     transfer_days_note: str | None = None
     valid_from: date
     valid_until: date | None = None
+    rule_kind: str = "linear"
+    block_size: Decimal | None = None
+    block_bonus_points: Decimal | None = None
 
 
 class TransferRuleResponse(BaseModel):
@@ -478,6 +488,9 @@ class TransferRuleResponse(BaseModel):
     transfer_days_note: str | None
     valid_from: str
     valid_until: str | None
+    rule_kind: str
+    block_size: str | None
+    block_bonus_points: str | None
 
 
 class PurchaseOfferRequest(BaseModel):
@@ -491,6 +504,10 @@ class PurchaseOfferRequest(BaseModel):
     start_date: date
     end_date: date | None = None
     source_note: str | None = None
+    paid_amount: Decimal | None = None
+    fees: Decimal | None = None
+    rebate: Decimal | None = None
+    points_received: Decimal | None = None
 
 
 class PurchaseOfferResponse(BaseModel):
@@ -506,6 +523,62 @@ class PurchaseOfferResponse(BaseModel):
     start_date: str
     end_date: str | None
     source_note: str | None
+    paid_amount: str | None
+    fees: str | None
+    rebate: str | None
+    points_received: str | None
+
+
+class AwardQuoteRequest(BaseModel):
+    origin: str | None = None
+    destination: str | None = None
+    travel_date: date | None = None
+    cabin: str | None = None
+    pax: int = 1
+    program_id: int
+    miles_required: Decimal
+    taxes_amount: Decimal | None = None
+    taxes_currency: str | None = None
+    cash_price_twd: Decimal | None = None
+    source: str = "manual"
+
+
+class AwardQuoteResponse(BaseModel):
+    id: int
+    origin: str | None
+    destination: str | None
+    travel_date: str | None
+    cabin: str | None
+    pax: int
+    program_id: int
+    miles_required: str
+    taxes_amount: str | None
+    taxes_currency: str | None
+    cash_price_twd: str | None
+    source: str
+    created_at: str
+
+
+class AwardEvaluateRequest(BaseModel):
+    evaluation_date: date | None = None
+
+
+class FundingScenarioResponse(BaseModel):
+    id: int
+    award_quote_id: int
+    evaluated_at: str
+    owner: str
+    method: str
+    path_json: str
+    true_cost_twd: str
+    saving_vs_cash_twd: str | None
+    rank: int
+    warnings: str | None
+    effective_cpp: str | None
+    total_cash_cost_twd: str
+    points_acquired: str
+    points_consumed: str
+    points_leftover: str
 
 
 class FxRateResponse(BaseModel):
@@ -881,6 +954,9 @@ def post_wallet_transfer_rule(
             transfer_days_note=request.transfer_days_note,
             valid_from=request.valid_from,
             valid_until=request.valid_until,
+            rule_kind=request.rule_kind,
+            block_size=request.block_size,
+            block_bonus_points=request.block_bonus_points,
         )
     except PointWalletNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -910,6 +986,10 @@ def post_wallet_purchase_offer(
             start_date=request.start_date,
             end_date=request.end_date,
             source_note=request.source_note,
+            paid_amount=request.paid_amount,
+            fees=request.fees,
+            rebate=request.rebate,
+            points_received=request.points_received,
         )
     except PointWalletNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -935,6 +1015,76 @@ def get_wallet_portfolio(
         return _point_wallet_portfolio_response(get_portfolio_summary(session, owner=owner))
     except PointWalletError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.get("/wallet/award-quotes", response_model=list[AwardQuoteResponse])
+def get_wallet_award_quotes(session: Session = Depends(get_session)) -> list[dict[str, Any]]:
+    return [_award_quote_response(row) for row in list_award_quotes(session)]
+
+
+@app.post("/wallet/award-quotes", response_model=AwardQuoteResponse)
+def post_wallet_award_quote(
+    request: AwardQuoteRequest,
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    try:
+        row = create_award_quote(
+            session,
+            origin=request.origin,
+            destination=request.destination,
+            travel_date=request.travel_date,
+            cabin=request.cabin,
+            pax=request.pax,
+            program_id=request.program_id,
+            miles_required=request.miles_required,
+            taxes_amount=request.taxes_amount,
+            taxes_currency=request.taxes_currency,
+            cash_price_twd=request.cash_price_twd,
+            source=request.source,
+        )
+    except PointWalletNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PointWalletError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return _award_quote_response(row)
+
+
+@app.get("/wallet/award-quotes/{quote_id}", response_model=AwardQuoteResponse)
+def get_wallet_award_quote(
+    quote_id: int,
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    try:
+        return _award_quote_response(get_award_quote(session, quote_id))
+    except PointWalletNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/wallet/award-quotes/{quote_id}/evaluate", response_model=list[FundingScenarioResponse])
+def post_wallet_award_quote_evaluate(
+    quote_id: int,
+    request: AwardEvaluateRequest,
+    session: Session = Depends(get_session),
+) -> list[dict[str, Any]]:
+    try:
+        rows = evaluate_award_quote(session, quote_id, evaluation_date=request.evaluation_date)
+    except PointWalletNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PointWalletError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return [_funding_scenario_response(row) for row in rows]
+
+
+@app.get("/wallet/award-quotes/{quote_id}/scenarios", response_model=list[FundingScenarioResponse])
+def get_wallet_award_quote_scenarios(
+    quote_id: int,
+    session: Session = Depends(get_session),
+) -> list[dict[str, Any]]:
+    try:
+        get_award_quote(session, quote_id)
+    except PointWalletNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return [_funding_scenario_response(row) for row in list_funding_scenarios(session, quote_id)]
 
 
 @app.get("/knowledge/documents", response_model=list[KnowledgeDocumentResponse])
@@ -1568,6 +1718,9 @@ def _transfer_rule_response(row) -> dict[str, Any]:
         "transfer_days_note": row.transfer_days_note,
         "valid_from": row.valid_from.isoformat(),
         "valid_until": row.valid_until.isoformat() if row.valid_until is not None else None,
+        "rule_kind": row.rule_kind,
+        "block_size": str(row.block_size) if row.block_size is not None else None,
+        "block_bonus_points": str(row.block_bonus_points) if row.block_bonus_points is not None else None,
     }
 
 
@@ -1585,6 +1738,10 @@ def _purchase_offer_response(row) -> dict[str, Any]:
         "start_date": row.start_date.isoformat(),
         "end_date": row.end_date.isoformat() if row.end_date is not None else None,
         "source_note": row.source_note,
+        "paid_amount": str(row.paid_amount) if row.paid_amount is not None else None,
+        "fees": str(row.fees) if row.fees is not None else None,
+        "rebate": str(row.rebate) if row.rebate is not None else None,
+        "points_received": str(row.points_received) if row.points_received is not None else None,
     }
 
 
@@ -1604,6 +1761,44 @@ def _point_wallet_portfolio_response(summary: dict[str, Any]) -> dict[str, Any]:
         "accounts": [_account_summary_response(row) for row in summary["accounts"]],
         "expiring_soon": [_account_summary_response(row) for row in summary["expiring_soon"]],
         "total_real_cost_basis_twd": str(summary["total_real_cost_basis_twd"]),
+    }
+
+
+def _award_quote_response(row) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "origin": row.origin,
+        "destination": row.destination,
+        "travel_date": row.travel_date.isoformat() if row.travel_date is not None else None,
+        "cabin": row.cabin,
+        "pax": row.pax,
+        "program_id": row.program_id,
+        "miles_required": str(row.miles_required),
+        "taxes_amount": str(row.taxes_amount) if row.taxes_amount is not None else None,
+        "taxes_currency": row.taxes_currency,
+        "cash_price_twd": str(row.cash_price_twd) if row.cash_price_twd is not None else None,
+        "source": row.source,
+        "created_at": row.created_at.isoformat(),
+    }
+
+
+def _funding_scenario_response(row) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "award_quote_id": row.award_quote_id,
+        "evaluated_at": row.evaluated_at.isoformat(),
+        "owner": row.owner,
+        "method": row.method,
+        "path_json": row.path_json,
+        "true_cost_twd": str(row.true_cost_twd),
+        "saving_vs_cash_twd": str(row.saving_vs_cash_twd) if row.saving_vs_cash_twd is not None else None,
+        "rank": row.rank,
+        "warnings": row.warnings,
+        "effective_cpp": str(row.effective_cpp) if row.effective_cpp is not None else None,
+        "total_cash_cost_twd": str(row.total_cash_cost_twd),
+        "points_acquired": str(row.points_acquired),
+        "points_consumed": str(row.points_consumed),
+        "points_leftover": str(row.points_leftover),
     }
 
 

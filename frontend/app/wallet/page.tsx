@@ -161,6 +161,9 @@ export default function WalletPage() {
           <button className="button" type="button" onClick={() => submit(refreshFxRates, "匯率已更新；若外部服務失敗則使用備用匯率。")}>
             更新匯率
           </button>
+          <Link className="button button-primary" href="/wallet/awards">
+            兌換成本
+          </Link>
         </section>
 
         <div className={styles.tabs} role="tablist" aria-label="點數錢包功能">
@@ -513,10 +516,18 @@ function TransferRulesPanel({
           <>
             <ProgramSelect programs={programs} name="from_program_id" value={prefs.programId} onChange={(value) => updatePrefs({ programId: value })} />
             <ProgramSelect programs={programs} name="to_program_id" />
+            <select name="rule_kind" defaultValue="linear">
+              <option value="linear">一般比例</option>
+              <option value="threshold_block">滿額加贈</option>
+            </select>
             <input name="ratio_from" placeholder="送出數量，例如 30000" required />
             <input name="ratio_to" placeholder="基礎實得，例如 10000" required />
             <input name="bonus_pct" placeholder="加贈百分比，例如 20" />
+            <input name="min_transfer" placeholder="最低轉出點數，可留空" />
+            <input name="block_size" placeholder="滿額門檻，例如 60000" />
+            <input name="block_bonus_points" placeholder="滿額加贈點數，例如 5000" />
             <input name="valid_from" type="date" defaultValue={today()} required />
+            <input name="valid_until" type="date" />
             <input name="transfer_days_note" placeholder="處理天數或備註" />
             <button
               className="button button-primary"
@@ -527,8 +538,13 @@ function TransferRulesPanel({
                 ratio_from: field(form, "ratio_from"),
                 ratio_to: field(form, "ratio_to"),
                 bonus_pct: field(form, "bonus_pct") || "0",
+                min_transfer: field(form, "min_transfer") || undefined,
                 valid_from: field(form, "valid_from"),
+                valid_until: field(form, "valid_until") || undefined,
                 transfer_days_note: field(form, "transfer_days_note"),
+                rule_kind: field(form, "rule_kind"),
+                block_size: field(form, "block_size") || undefined,
+                block_bonus_points: field(form, "block_bonus_points") || undefined,
               }), "轉點規則已新增。")}
             >
               新增規則
@@ -587,7 +603,12 @@ function PurchaseOffersPanel({
               ))}
             </select>
             <input name="bonus_pct" placeholder="加贈百分比" />
+            <input name="paid_amount" placeholder="實付金額，可留空" />
+            <input name="fees" placeholder="手續費，可留空" />
+            <input name="rebate" placeholder="回饋，可留空" />
+            <input name="points_received" placeholder="實際入帳點數，可留空" />
             <input name="start_date" type="date" defaultValue={today()} required />
+            <input name="end_date" type="date" />
             <input name="source_note" placeholder="來源備註" />
             <button
               className="button button-primary"
@@ -599,7 +620,12 @@ function PurchaseOffersPanel({
                 currency: field(form, "currency"),
                 bonus_pct: field(form, "bonus_pct") || "0",
                 start_date: field(form, "start_date"),
+                end_date: field(form, "end_date") || undefined,
                 source_note: field(form, "source_note"),
+                paid_amount: field(form, "paid_amount") || undefined,
+                fees: field(form, "fees") || undefined,
+                rebate: field(form, "rebate") || undefined,
+                points_received: field(form, "points_received") || undefined,
               }), "買分價格已新增。")}
             >
               新增價格
@@ -692,6 +718,12 @@ function transferSentence(rule: TransferRule, programs: Program[]): string {
   const sent = ratioFrom < 1000 ? ratioFrom * 10000 : ratioFrom;
   const base = ratioFrom > 0 ? (sent / ratioFrom) * ratioTo : 0;
   const bonus = Number(rule.bonus_pct || 0);
+  if (rule.rule_kind === "threshold_block") {
+    const blockSize = Number(rule.block_size || 0);
+    const blockBonus = Number(rule.block_bonus_points || 0);
+    const blockText = blockSize && blockBonus ? `每滿 ${formatNumber(blockSize)} 額外送 ${formatNumber(blockBonus)} 點,` : "";
+    return `${fromName} → ${toName}:${formatNumber(sent)} → ${formatNumber(base)}(${formatNumber(ratioFrom)}:${formatNumber(ratioTo)},${blockText}有效至 ${rule.valid_until || "未設定"})`;
+  }
   const received = Math.round(base * (1 + bonus / 100));
   const bonusText = bonus > 0 ? `,+${formatNumber(bonus)}% 加贈, 實得 ${formatNumber(received)}` : `,實得 ${formatNumber(received)}`;
   const until = rule.valid_until || "未設定";

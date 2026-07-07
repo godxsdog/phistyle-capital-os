@@ -118,3 +118,55 @@ def test_wallet_transfer_rule_offer_fx_and_registry_contract(monkeypatch):
     assert fx.json()["source"] == "fallback"
     assert wallet["status"] == "scaffold-active"
     assert wallet["route"] == "/wallet"
+
+
+def test_wallet_award_quote_evaluate_endpoint_is_read_only_for_lots():
+    client = make_client()
+    wanlitong = client.post("/wallet/programs", json={"name": "平安萬里通", "kind": "bank"}).json()
+    aeroplan = client.post("/wallet/programs", json={"name": "Aeroplan", "kind": "airline"}).json()
+    account = client.post("/wallet/accounts", json={"owner": "kent", "program_id": wanlitong["id"]}).json()
+    client.post(
+        "/wallet/ledger",
+        json={
+            "account_id": account["id"],
+            "kind": "buy",
+            "quantity": "100000",
+            "occurred_at": "2026-07-01",
+            "cost_total": "10000",
+            "cost_currency": "TWD",
+            "create_lot": True,
+        },
+    )
+    client.post(
+        "/wallet/transfer-rules",
+        json={
+            "from_program_id": wanlitong["id"],
+            "to_program_id": aeroplan["id"],
+            "ratio_from": "2",
+            "ratio_to": "1",
+            "valid_from": "2026-01-01",
+        },
+    )
+    quote = client.post(
+        "/wallet/award-quotes",
+        json={
+            "origin": "TPE",
+            "destination": "TYO",
+            "program_id": aeroplan["id"],
+            "miles_required": "30000",
+            "taxes_amount": "1000",
+            "taxes_currency": "TWD",
+            "cash_price_twd": "50000",
+        },
+    ).json()
+    before = client.get("/wallet/cost-lots").json()
+
+    response = client.post(f"/wallet/award-quotes/{quote['id']}/evaluate", json={"evaluation_date": "2026-07-07"})
+
+    after = client.get("/wallet/cost-lots").json()
+    assert response.status_code == 200
+    assert after == before
+    scenarios = response.json()
+    assert scenarios[0]["method"] == "transfer_chain"
+    assert scenarios[0]["total_cash_cost_twd"] == "7000.00"
+    assert scenarios[0]["points_consumed"] == "60000.00"
