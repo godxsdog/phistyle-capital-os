@@ -82,6 +82,7 @@ class TransferRule(Base):
     rule_kind: Mapped[str] = mapped_column(Text, nullable=False, default="linear")
     block_size: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
     block_bonus_points: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
+    source_url: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     from_program: Mapped[PointProgram] = relationship(foreign_keys=[from_program_id])
     to_program: Mapped[PointProgram] = relationship(foreign_keys=[to_program_id])
@@ -106,6 +107,7 @@ class PurchaseOffer(Base):
     fees: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
     rebate: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
     points_received: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
+    source_url: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     program: Mapped[PointProgram] = relationship()
 

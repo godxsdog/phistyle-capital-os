@@ -214,6 +214,7 @@ def create_transfer_rule(
     rule_kind: str = "linear",
     block_size: Decimal | None = None,
     block_bonus_points: Decimal | None = None,
+    source_url: str | None = None,
 ) -> TransferRule:
     _require_program(session, from_program_id)
     _require_program(session, to_program_id)
@@ -230,6 +231,7 @@ def create_transfer_rule(
         rule_kind=rule_kind,
         block_size=block_size,
         block_bonus_points=block_bonus_points,
+        source_url=source_url,
     )
     session.add(row)
     _commit(session)
@@ -257,6 +259,7 @@ def create_purchase_offer(
     fees: Decimal | None = None,
     rebate: Decimal | None = None,
     points_received: Decimal | None = None,
+    source_url: str | None = None,
 ) -> PurchaseOffer:
     _require_program(session, program_id)
     effective_cpp = _effective_cpp(base_price, bonus_pct, paid_amount, fees, rebate, points_received)
@@ -276,6 +279,7 @@ def create_purchase_offer(
         fees=fees,
         rebate=rebate,
         points_received=points_received,
+        source_url=source_url,
     )
     session.add(row)
     _commit(session)

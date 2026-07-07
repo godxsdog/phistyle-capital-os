@@ -91,6 +91,7 @@ def test_wallet_transfer_rule_offer_fx_and_registry_contract(monkeypatch):
             "ratio_to": "1",
             "bonus_pct": "25",
             "valid_from": "2026-07-06",
+            "source_url": "https://example.test/transfer",
         },
     )
     offer = client.post(
@@ -102,6 +103,7 @@ def test_wallet_transfer_rule_offer_fx_and_registry_contract(monkeypatch):
             "currency": "TWD",
             "bonus_pct": "25",
             "start_date": "2026-07-06",
+            "source_url": "https://example.test/offer",
         },
     )
 
@@ -114,7 +116,9 @@ def test_wallet_transfer_rule_offer_fx_and_registry_contract(monkeypatch):
     wallet = next(app for app in apps if app["id"] == "points-wallet")
 
     assert rule.status_code == 200
+    assert rule.json()["source_url"] == "https://example.test/transfer"
     assert offer.json()["effective_cpp"] == "0.400000"
+    assert offer.json()["source_url"] == "https://example.test/offer"
     assert fx.json()["source"] == "fallback"
     assert wallet["status"] == "scaffold-active"
     assert wallet["route"] == "/wallet"

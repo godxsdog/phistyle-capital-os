@@ -475,6 +475,7 @@ class TransferRuleRequest(BaseModel):
     rule_kind: str = "linear"
     block_size: Decimal | None = None
     block_bonus_points: Decimal | None = None
+    source_url: str | None = None
 
 
 class TransferRuleResponse(BaseModel):
@@ -491,6 +492,7 @@ class TransferRuleResponse(BaseModel):
     rule_kind: str
     block_size: str | None
     block_bonus_points: str | None
+    source_url: str | None
 
 
 class PurchaseOfferRequest(BaseModel):
@@ -508,6 +510,7 @@ class PurchaseOfferRequest(BaseModel):
     fees: Decimal | None = None
     rebate: Decimal | None = None
     points_received: Decimal | None = None
+    source_url: str | None = None
 
 
 class PurchaseOfferResponse(BaseModel):
@@ -527,6 +530,7 @@ class PurchaseOfferResponse(BaseModel):
     fees: str | None
     rebate: str | None
     points_received: str | None
+    source_url: str | None
 
 
 class AwardQuoteRequest(BaseModel):
@@ -957,6 +961,7 @@ def post_wallet_transfer_rule(
             rule_kind=request.rule_kind,
             block_size=request.block_size,
             block_bonus_points=request.block_bonus_points,
+            source_url=request.source_url,
         )
     except PointWalletNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -990,6 +995,7 @@ def post_wallet_purchase_offer(
             fees=request.fees,
             rebate=request.rebate,
             points_received=request.points_received,
+            source_url=request.source_url,
         )
     except PointWalletNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -1721,6 +1727,7 @@ def _transfer_rule_response(row) -> dict[str, Any]:
         "rule_kind": row.rule_kind,
         "block_size": str(row.block_size) if row.block_size is not None else None,
         "block_bonus_points": str(row.block_bonus_points) if row.block_bonus_points is not None else None,
+        "source_url": row.source_url,
     }
 
 
@@ -1742,6 +1749,7 @@ def _purchase_offer_response(row) -> dict[str, Any]:
         "fees": str(row.fees) if row.fees is not None else None,
         "rebate": str(row.rebate) if row.rebate is not None else None,
         "points_received": str(row.points_received) if row.points_received is not None else None,
+        "source_url": row.source_url,
     }
 
 

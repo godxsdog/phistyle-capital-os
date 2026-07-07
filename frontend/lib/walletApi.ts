@@ -43,6 +43,7 @@ export type TransferRule = {
   rule_kind: string;
   block_size: string | null;
   block_bonus_points: string | null;
+  source_url: string | null;
 };
 
 export type PurchaseOffer = {
@@ -60,6 +61,7 @@ export type PurchaseOffer = {
   fees: string | null;
   rebate: string | null;
   points_received: string | null;
+  source_url: string | null;
 };
 
 export type Portfolio = {
@@ -154,6 +156,7 @@ export async function createTransferRule(payload: {
   rule_kind?: string;
   block_size?: string;
   block_bonus_points?: string;
+  source_url?: string;
 }): Promise<TransferRule> {
   return requestJson<TransferRule>("/wallet/transfer-rules", { method: "POST", body: JSON.stringify(payload) });
 }
@@ -177,6 +180,7 @@ export async function createPurchaseOffer(payload: {
   fees?: string;
   rebate?: string;
   points_received?: string;
+  source_url?: string;
 }): Promise<PurchaseOffer> {
   return requestJson<PurchaseOffer>("/wallet/purchase-offers", { method: "POST", body: JSON.stringify(payload) });
 }

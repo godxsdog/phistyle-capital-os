@@ -21,10 +21,12 @@ def upgrade() -> None:
     op.add_column("transfer_rules", sa.Column("rule_kind", sa.Text(), nullable=False, server_default="linear"))
     op.add_column("transfer_rules", sa.Column("block_size", sa.Numeric(18, 2), nullable=True))
     op.add_column("transfer_rules", sa.Column("block_bonus_points", sa.Numeric(18, 2), nullable=True))
+    op.add_column("transfer_rules", sa.Column("source_url", sa.Text(), nullable=True))
     op.add_column("purchase_offers", sa.Column("paid_amount", sa.Numeric(18, 2), nullable=True))
     op.add_column("purchase_offers", sa.Column("fees", sa.Numeric(18, 2), nullable=True))
     op.add_column("purchase_offers", sa.Column("rebate", sa.Numeric(18, 2), nullable=True))
     op.add_column("purchase_offers", sa.Column("points_received", sa.Numeric(18, 2), nullable=True))
+    op.add_column("purchase_offers", sa.Column("source_url", sa.Text(), nullable=True))
     op.create_table(
         "award_quotes",
         sa.Column("id", sa.Integer(), nullable=False),
@@ -69,9 +71,11 @@ def downgrade() -> None:
     op.drop_table("funding_scenarios")
     op.drop_table("award_quotes")
     op.drop_column("purchase_offers", "points_received")
+    op.drop_column("purchase_offers", "source_url")
     op.drop_column("purchase_offers", "rebate")
     op.drop_column("purchase_offers", "fees")
     op.drop_column("purchase_offers", "paid_amount")
+    op.drop_column("transfer_rules", "source_url")
     op.drop_column("transfer_rules", "block_bonus_points")
     op.drop_column("transfer_rules", "block_size")
     op.drop_column("transfer_rules", "rule_kind")

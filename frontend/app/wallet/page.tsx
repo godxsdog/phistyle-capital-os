@@ -87,16 +87,6 @@ export default function WalletPage() {
     () => accounts.filter((account) => account.owner === activeOwner),
     [accounts, activeOwner],
   );
-  const filteredRules = useMemo(
-    () =>
-      rules.filter((rule) => {
-        if (fromFilter && String(rule.from_program_id) !== fromFilter) return false;
-        if (toFilter && String(rule.to_program_id) !== toFilter) return false;
-        return true;
-      }),
-    [rules, fromFilter, toFilter],
-  );
-
   async function loadWallet() {
     try {
       const [
@@ -201,7 +191,7 @@ export default function WalletPage() {
         {prefs.tab === "transferRules" ? (
           <TransferRulesPanel
             programs={programs}
-            rules={filteredRules}
+            rules={rules}
             fromFilter={fromFilter}
             toFilter={toFilter}
             setFromFilter={setFromFilter}
@@ -493,20 +483,50 @@ function TransferRulesPanel({
   updatePrefs: (next: Partial<Preferences>) => void;
   submit: (action: () => Promise<unknown>, message: string) => Promise<void>;
 }) {
+  const fromProgramIds = Array.from(new Set(rules.map((rule) => rule.from_program_id)));
+  const activeFromFilter = fromFilter || String(fromProgramIds[0] || "");
+  const visibleRules = rules.filter((rule) => {
+    if (activeFromFilter && String(rule.from_program_id) !== activeFromFilter) return false;
+    if (toFilter && String(rule.to_program_id) !== toFilter) return false;
+    return true;
+  });
+
   return (
     <>
       <section className="panel">
         <h2>轉點規則</h2>
         <p className="subtle">這裡用人話顯示轉點比例、加贈與有效期，比例統一寫成「送出 → 實得」。</p>
+        <div className={styles.tabs} role="tablist" aria-label="來源計畫">
+          {fromProgramIds.length === 0 ? (
+            <span className="pending-text">目前沒有來源計畫。</span>
+          ) : (
+            fromProgramIds.map((programId) => (
+              <button
+                className={`button ${activeFromFilter === String(programId) ? "button-primary" : ""}`}
+                key={programId}
+                type="button"
+                onClick={() => setFromFilter(String(programId))}
+              >
+                {programName(programs, programId)}
+              </button>
+            ))
+          )}
+        </div>
         <div className={styles.filterRow}>
-          <ProgramSelect programs={programs} name="from_filter" value={fromFilter} onChange={setFromFilter} includeAll allLabel="全部來源" />
           <ProgramSelect programs={programs} name="to_filter" value={toFilter} onChange={setToFilter} includeAll allLabel="全部目的地" />
         </div>
         <div className={styles.ruleList}>
-          {rules.length === 0 ? (
+          {visibleRules.length === 0 ? (
             <p className="pending-text">目前沒有符合條件的轉點規則。</p>
           ) : (
-            rules.map((rule) => <div className={styles.ruleSentence} key={rule.id}>{transferSentence(rule, programs)}</div>)
+            visibleRules.map((rule) => (
+              <div className={styles.ruleSentence} key={rule.id}>
+                <span>{transferSentence(rule, programs)}</span>
+                {rule.source_url ? (
+                  <a href={rule.source_url} target="_blank" rel="noreferrer">查證</a>
+                ) : null}
+              </div>
+            ))
           )}
         </div>
       </section>
@@ -529,6 +549,7 @@ function TransferRulesPanel({
             <input name="valid_from" type="date" defaultValue={today()} required />
             <input name="valid_until" type="date" />
             <input name="transfer_days_note" placeholder="處理天數或備註" />
+            <input name="source_url" placeholder="查證網址，可留空" />
             <button
               className="button button-primary"
               type="button"
@@ -545,6 +566,7 @@ function TransferRulesPanel({
                 rule_kind: field(form, "rule_kind"),
                 block_size: field(form, "block_size") || undefined,
                 block_bonus_points: field(form, "block_bonus_points") || undefined,
+                source_url: field(form, "source_url") || undefined,
               }), "轉點規則已新增。")}
             >
               新增規則
@@ -582,7 +604,7 @@ function PurchaseOffersPanel({
             `${formatNumber(offer.base_price)} ${offer.currency}`,
             `${formatNumber(offer.bonus_pct)}%`,
             costPerPoint(offer.effective_cpp),
-            offer.source_note || "未填寫",
+            offer.source_url ? `查證：${offer.source_url}` : offer.source_note || "未填寫",
           ])}
         />
       </section>
@@ -610,6 +632,7 @@ function PurchaseOffersPanel({
             <input name="start_date" type="date" defaultValue={today()} required />
             <input name="end_date" type="date" />
             <input name="source_note" placeholder="來源備註" />
+            <input name="source_url" placeholder="查證網址，可留空" />
             <button
               className="button button-primary"
               type="button"
@@ -626,6 +649,7 @@ function PurchaseOffersPanel({
                 fees: field(form, "fees") || undefined,
                 rebate: field(form, "rebate") || undefined,
                 points_received: field(form, "points_received") || undefined,
+                source_url: field(form, "source_url") || undefined,
               }), "買分價格已新增。")}
             >
               新增價格
