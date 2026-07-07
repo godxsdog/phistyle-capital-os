@@ -1,5 +1,14 @@
 # Ticket: Phase PW-2 — Award Cost Engine
 
+VERDICT: ACCEPTED (Fable, 2026-07-07; commits 610d181 + 64ef79c).
+A1-A9 complete; threshold-block fixture (30k miles = exactly 75k
+Marriott) passing; migration 0010 (final, incl. source_url) approved.
+VERIFIED after: deploy + upgrade 0010_pw_award_cost + user evaluates
+one real quote and confirms lots untouched.
+OUTSTANDING (separate Codex task, prompt already issued): Excel rates
+extraction command (data-rescue/wanlitong_rates.xlsx → dry-run review
+list → --commit), honesty rules apply (skip ambiguous, never guess).
+
 FABLE-APPROVED: yes (2026-07-06). PRE-START: fresh-context Sonnet
 clarity review recommended; user may waive (record in report).
 IMPLEMENTATION OWNER: Codex. VERDICT: new Fable session.
@@ -76,6 +85,17 @@ A5. 情境輸出增列並顯示:effective_cpp、total_cash_cost_twd、
   total cost(完成這張票的總成本),leftover 為資訊欄不進排名。
 A6. 每個 quote 對每個可行 program 至少跑三種成本來源:既有點數
   (lot 真實成本)、當日萬里通路徑(A1)、官方/第三方買分。
+
+A7. 轉點規則頁 UI 改為「依來源計畫分頁」:萬里通/萬豪/吉祥/
+  Qatar/漢莎/LifeMiles…(分頁 = from_program 的 group-by,動態
+  產生,無 schema 影響)。對齊使用者 Excel 的心智模型。
+A8. transfer_rules 與 purchase_offers 各增 source_url Text NULL
+  (併入 migration 0010):存放比例出處連結,UI 顯示為可點的
+  「查證」連結。自動上網抓取比例 = NO-GO(TripPlus 教訓:脆弱
+  爬蟲不做);比例由使用者手動維護,配 valid_from/until。
+A9. 買分階梯價(如 AS 特賣 0.54/0.58/0.62/0.66 per mile)用多筆
+  purchase_offers 表達(每階一筆,min/max_points 區分),不新增
+  階梯結構。
 
 ## 5/7. SCOPE + SCHEMA (one additive migration, id ≤ 32 chars)
 
