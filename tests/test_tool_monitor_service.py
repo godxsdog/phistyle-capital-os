@@ -159,14 +159,23 @@ def test_tick_notifies_on_status_change_but_not_on_first_success():
 
 def test_tick_alerts_after_three_consecutive_failures_and_not_again_on_fourth():
     session = make_session()
-    update_flight_watch_settings(session, enabled=True, interval_minutes=1)
+    update_flight_watch_settings(session, enabled=True, interval_minutes=10)
     now = datetime.now(timezone.utc)
     notifications: list[str] = []
 
     def failing_fetcher(*_):
         raise RuntimeError("network unreachable")
 
+    def force_gate_open():
+        # Bypass the interval gate (without touching validation) by clearing
+        # last_run_at directly, so each tick below runs regardless of the
+        # real interval_minutes value.
+        settings = get_or_create_flight_watch_settings(session)
+        settings.last_run_at = None
+        session.commit()
+
     for i in range(3):
+        force_gate_open()
         tick_flight_watch(
             session,
             now=now + timedelta(minutes=2 * i),
@@ -186,6 +195,7 @@ def test_tick_alerts_after_three_consecutive_failures_and_not_again_on_fourth():
     # alerted_at_count(3) recorded above, so it alerts again. This mirrors
     # tools/flight_watch.py's own CLI debounce (dedupes only same-count
     # re-processing, not repeated failures at increasing counts).
+    force_gate_open()
     tick_flight_watch(
         session,
         now=now + timedelta(minutes=10),
@@ -197,7 +207,7 @@ def test_tick_alerts_after_three_consecutive_failures_and_not_again_on_fourth():
 
 def test_tick_never_raises_and_records_error_in_last_status():
     session = make_session()
-    update_flight_watch_settings(session, enabled=True, interval_minutes=1)
+    update_flight_watch_settings(session, enabled=True, interval_minutes=10)
 
     def failing_fetcher(*_):
         raise ValueError("boom")
