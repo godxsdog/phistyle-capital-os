@@ -7,17 +7,25 @@
  * GetByFlightNumber JSON response, and prints a compact result.
  *
  * Run from the repo root:
- *   npm exec --yes --package playwright -- node tools/airasia_browser_status.js AK1511 2026-07-10
+ *   NODE_PATH=/tmp/airasia-pw/node_modules node tools/airasia_browser_status.js AK1511 2026-07-10
+ *
+ * Send the same concise status to Telegram:
+ *   TELEGRAM_BOT_TOKEN=... TELEGRAM_CHAT_ID=... NODE_PATH=/tmp/airasia-pw/node_modules node tools/airasia_browser_status.js AK1511 2026-07-10 --telegram
  *
  * Debug with a visible browser:
- *   HEADLESS=0 npm exec --yes --package playwright -- node tools/airasia_browser_status.js AK1511 2026-07-10
+ *   HEADLESS=0 NODE_PATH=/tmp/airasia-pw/node_modules node tools/airasia_browser_status.js AK1511 2026-07-10 --json
  */
+
+const https = require("https");
 
 const FLIGHT_STATUS_URL = "https://www.airasia.com/flightstatus/zh/tw";
 const API_MARKER = "/GetByFlightNumber";
+const TELEGRAM_API_HOST = "api.telegram.org";
 
-const flightNo = process.argv[2] || "AK1511";
-const flightDate = process.argv[3] || "2026-07-10";
+const positionalArgs = process.argv.slice(2).filter((arg) => !arg.startsWith("--"));
+const flags = new Set(process.argv.slice(2).filter((arg) => arg.startsWith("--")));
+const flightNo = positionalArgs[0] || "AK1511";
+const flightDate = positionalArgs[1] || "2026-07-10";
 const headless = process.env.HEADLESS !== "0";
 
 async function main() {
@@ -68,7 +76,7 @@ async function main() {
 
     const api = apiResponses.at(-1);
     if (api) {
-      console.log(JSON.stringify({
+      const result = {
         source: "airasia_browser_network",
         flight_no: flightNo,
         flight_date: flightDate,
@@ -76,20 +84,33 @@ async function main() {
         api_url: api.url,
         summary: summarizePayload(api.json ?? api.text),
         raw: api.json ?? api.text,
-      }, null, 2));
+      };
+      await outputResult(result);
       return;
     }
 
     const visibleText = await page.locator("body").innerText({ timeout: 5000 }).catch(() => "");
-    console.log(JSON.stringify({
+    await outputResult({
       source: "airasia_browser_visible_text",
       flight_no: flightNo,
       flight_date: flightDate,
       warning: "沒有攔到 GetByFlightNumber JSON response，以下是頁面可見文字。",
       visible_text: visibleText.slice(0, 6000),
-    }, null, 2));
+    });
   } finally {
     await browser.close();
+  }
+}
+
+async function outputResult(result) {
+  if (flags.has("--json")) {
+    console.log(JSON.stringify(result, null, 2));
+  } else {
+    console.log(statusOnly(result));
+  }
+
+  if (flags.has("--telegram")) {
+    await sendTelegram(telegramMessage(result));
   }
 }
 
@@ -263,6 +284,65 @@ function summarizeFlightRecord(record) {
     aircraft: record.rego || null,
     last_updated: record.lastUpdatedCache || null,
   };
+}
+
+function statusOnly(result) {
+  return selectedFlight(result)?.status || result.summary?.likely_status || "Unknown";
+}
+
+function telegramMessage(result) {
+  const flight = selectedFlight(result);
+  if (!flight) return `${flightNo}(${flightDate}) 狀態：${statusOnly(result)}`;
+  return `${flight.flight} ${flight.route} ${flightDate}：${flight.status}，起飛 ${flight.departure || "未知"}，抵達 ${flight.arrival || "未知"}`;
+}
+
+function selectedFlight(result) {
+  const flights = result.summary?.flights || [];
+  if (!Array.isArray(flights) || flights.length === 0) return null;
+  return flights.find((flight) => flight.route === "TPE → BKI") || flights[0];
+}
+
+function sendTelegram(message) {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  const chatId = process.env.TELEGRAM_CHAT_ID;
+  if (!token || !chatId) throw new Error("TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID are required for --telegram");
+
+  const body = JSON.stringify({
+    chat_id: chatId,
+    text: message,
+    disable_web_page_preview: true,
+  });
+
+  return new Promise((resolve, reject) => {
+    const request = https.request({
+      hostname: TELEGRAM_API_HOST,
+      path: `/bot${token}/sendMessage`,
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Content-Length": Buffer.byteLength(body),
+      },
+      timeout: 20000,
+    }, (response) => {
+      let data = "";
+      response.on("data", (chunk) => {
+        data += chunk;
+      });
+      response.on("end", () => {
+        if (response.statusCode >= 200 && response.statusCode < 300) {
+          resolve();
+        } else {
+          reject(new Error(`Telegram HTTP ${response.statusCode}: ${data.slice(0, 300)}`));
+        }
+      });
+    });
+    request.on("error", reject);
+    request.on("timeout", () => {
+      request.destroy(new Error("Telegram request timed out"));
+    });
+    request.write(body);
+    request.end();
+  });
 }
 
 main().catch((error) => {
