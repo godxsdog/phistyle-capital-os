@@ -151,6 +151,14 @@ from shared.services.market_data_service import (
     market_sanity_summary,
     update_watchlist_symbol,
 )
+from shared.services.tool_monitor_service import (
+    ToolMonitorError,
+    get_or_create_flight_watch_settings,
+    query_flight_status,
+    parse_last_status as parse_tool_monitor_status,
+    tick_flight_watch,
+    update_flight_watch_settings,
+)
 
 
 app = FastAPI(title="PhiStyle OS API")
@@ -461,6 +469,49 @@ class MarketIngestRunResponse(BaseModel):
     detail: str | None
     started_at: str
     finished_at: str | None
+
+
+class ToolMonitorSettingsRequest(BaseModel):
+    enabled: bool | None = None
+    flight_no: str | None = None
+    flight_date: date | None = None
+    interval_minutes: int | None = None
+
+
+class ToolMonitorSettingsResponse(BaseModel):
+    id: int
+    kind: str
+    enabled: bool
+    flight_no: str
+    flight_date: str
+    interval_minutes: int
+    last_run_at: str | None
+    last_status_ok: bool | None
+    last_status_display: str | None
+    last_status_fail_count: int
+    updated_at: str
+
+
+class FlightStatusRequest(BaseModel):
+    flight_no: str = "AK1511"
+    flight_date: str = "2026-07-10"
+
+
+class FlightStatusResponse(BaseModel):
+    flight_no: str
+    flight_date: str
+    status: str | None
+    display: str
+    raw: dict[str, Any]
+
+
+class MonitorTickResponse(BaseModel):
+    skipped: bool
+    reason: str | None
+    ran_at: str | None
+    status_ok: bool | None
+    display: str | None
+    notified: bool
 
 
 class PointProgramRequest(BaseModel):
@@ -1052,6 +1103,51 @@ def get_capital_market_data_sanity(session: Session = Depends(get_session)) -> l
 @app.get("/capital/market-data/ingest-runs", response_model=list[MarketIngestRunResponse])
 def get_capital_market_data_ingest_runs(session: Session = Depends(get_session)) -> list[dict[str, Any]]:
     return [_market_ingest_run_response(row) for row in list_ingest_runs(session)]
+
+
+@app.get("/tools/monitors/flight_watch", response_model=ToolMonitorSettingsResponse)
+def get_tools_flight_watch_settings(session: Session = Depends(get_session)) -> dict[str, Any]:
+    row = get_or_create_flight_watch_settings(session)
+    return _tool_monitor_settings_response(row)
+
+
+@app.patch("/tools/monitors/flight_watch", response_model=ToolMonitorSettingsResponse)
+def patch_tools_flight_watch_settings(
+    payload: ToolMonitorSettingsRequest,
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    try:
+        row = update_flight_watch_settings(
+            session,
+            enabled=payload.enabled,
+            flight_no=payload.flight_no,
+            flight_date=payload.flight_date,
+            interval_minutes=payload.interval_minutes,
+        )
+    except ToolMonitorError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return _tool_monitor_settings_response(row)
+
+
+@app.post("/tools/flight-status", response_model=FlightStatusResponse)
+def post_tools_flight_status(payload: FlightStatusRequest) -> dict[str, Any]:
+    try:
+        return query_flight_status(payload.flight_no, payload.flight_date)
+    except Exception as exc:  # noqa: BLE001 - external fetch, fail loud with detail
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/tools/monitors/tick", response_model=MonitorTickResponse)
+def post_tools_monitor_tick(session: Session = Depends(get_session)) -> dict[str, Any]:
+    result = tick_flight_watch(session)
+    return {
+        "skipped": result.skipped,
+        "reason": result.reason,
+        "ran_at": result.ran_at.isoformat() if result.ran_at else None,
+        "status_ok": result.status_ok,
+        "display": result.display,
+        "notified": result.notified,
+    }
 
 
 @app.get("/wallet/programs", response_model=list[PointProgramResponse])
@@ -2318,6 +2414,23 @@ def _market_ingest_run_response(row) -> dict[str, Any]:
         "detail": row.detail,
         "started_at": row.started_at.isoformat(),
         "finished_at": row.finished_at.isoformat() if row.finished_at is not None else None,
+    }
+
+
+def _tool_monitor_settings_response(row) -> dict[str, Any]:
+    parsed = parse_tool_monitor_status(row.last_status)
+    return {
+        "id": row.id,
+        "kind": row.kind,
+        "enabled": row.enabled,
+        "flight_no": row.flight_no,
+        "flight_date": row.flight_date.isoformat(),
+        "interval_minutes": row.interval_minutes,
+        "last_run_at": row.last_run_at.isoformat() if row.last_run_at is not None else None,
+        "last_status_ok": parsed.get("ok") if parsed else None,
+        "last_status_display": (parsed.get("display") or parsed.get("error")) if parsed else None,
+        "last_status_fail_count": parsed.get("fail_count", 0) if parsed else 0,
+        "updated_at": row.updated_at.isoformat(),
     }
 
 

@@ -1,4 +1,24 @@
 import Link from "next/link";
+import styles from "./LauncherPage.module.css";
+
+// PhiStyle launcher — mobile-first home screen.
+// IMPORTANT: all new pages must be added to LAUNCHER_TILES below so they
+// stay reachable from the home screen.
+type LauncherTile = {
+  emoji: string;
+  label: string;
+  href: string;
+};
+
+const LAUNCHER_TILES: LauncherTile[] = [
+  { emoji: "💰", label: "錢包總覽", href: "/wallet" },
+  { emoji: "✈️", label: "換票比價", href: "/wallet/awards" },
+  { emoji: "🔄", label: "轉點規則", href: "/wallet?tab=wanlitong" },
+  { emoji: "📈", label: "交易決策", href: "/capital/decisions" },
+  { emoji: "📊", label: "交易紀錄", href: "/capital/history" },
+  { emoji: "🛠", label: "工具", href: "/tools" },
+  { emoji: "📡", label: "市場資料", href: "/capital/market-data" },
+];
 
 async function getHealth(): Promise<string> {
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -15,119 +35,28 @@ async function getHealth(): Promise<string> {
   }
 }
 
-type AppMetadata = {
-  id: string;
-  name: string;
-  category: string;
-  status: string;
-  sensitivity: string;
-  route: string;
-  health_endpoint: string;
-  owner: string;
-  data_scope: string;
-};
-
-async function getApps(): Promise<AppMetadata[]> {
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-
-  try {
-    const response = await fetch(`${apiUrl}/apps`, { cache: "no-store" });
-    if (!response.ok) {
-      return [];
-    }
-    return (await response.json()) as AppMetadata[];
-  } catch {
-    return [];
-  }
-}
-
 export default async function Home() {
-  const [status, apps] = await Promise.all([getHealth(), getApps()]);
-  const isOk = status === "ok";
+  const status = await getHealth();
 
   return (
     <main>
       <div className="shell">
         <section className="hero">
-          <div className="eyebrow">Phase 1 Platform Scaffold</div>
-          <h1>PhiStyle OS</h1>
-          <p>
-            Minimum runnable foundation for the OS shell. Domain apps, AI,
-            investment workflows, and legacy integrations are intentionally not
-            implemented yet.
-          </p>
+          <div className="eyebrow">PhiStyle</div>
+          <h1>PhiStyle</h1>
+          <p>交易決策、點數錢包與工具的個人入口，手機優先設計。</p>
         </section>
 
-        <section className="status-panel" aria-label="Backend health">
-          <div className="status-label">Backend health</div>
-          <div className={`status-value ${isOk ? "status-ok" : ""}`}>
-            {status}
-          </div>
-        </section>
-
-        <section className="action-band" aria-label="Capital decision dashboard">
-          <div>
-            <div className="section-kicker">Capital</div>
-            <h2>Decision dashboard</h2>
-            <p>Create Capital investment decision records, run the advisory pipeline, and record explicit human review.</p>
-          </div>
-          <div className="form-actions">
-            <Link className="button button-primary" href="/capital/decisions">
-              Capital Decisions
+        <nav className={styles.grid} aria-label="功能選單">
+          {LAUNCHER_TILES.map((tile) => (
+            <Link key={tile.href} className={styles.tile} href={tile.href}>
+              <span className={styles.emoji} aria-hidden="true">{tile.emoji}</span>
+              <span className={styles.label}>{tile.label}</span>
             </Link>
-            <Link className="button" href="/capital/history">
-              Trade History
-            </Link>
-          </div>
-        </section>
+          ))}
+        </nav>
 
-        <section className="action-band" aria-label="Point wallet dashboard">
-          <div>
-            <div className="section-kicker">Point Wallet</div>
-            <h2>Points & miles ledger</h2>
-            <p>Track owner balances, lot-level cost basis, expiry risk, transfer rules, and purchase offers.</p>
-          </div>
-          <Link className="button button-primary" href="/wallet">
-            Open Wallet
-          </Link>
-        </section>
-
-        <section className="app-section" aria-label="Registered apps">
-          <div>
-            <div className="section-kicker">App Registry</div>
-            <h2>Registered apps</h2>
-          </div>
-
-          <div className="app-grid">
-            {apps.map((app) => (
-              <article className="app-card" key={app.id}>
-                <div className="app-card-header">
-                  <div>
-                    <strong>{app.name}</strong>
-                    <span>{app.category}</span>
-                  </div>
-                  <span className={`status-pill status-${app.status}`}>
-                    {app.status}
-                  </span>
-                </div>
-                <dl>
-                  <div>
-                    <dt>Sensitivity</dt>
-                    <dd>{app.sensitivity}</dd>
-                  </div>
-                  <div>
-                    <dt>Owner</dt>
-                    <dd>{app.owner}</dd>
-                  </div>
-                  <div>
-                    <dt>Data scope</dt>
-                    <dd>{app.data_scope}</dd>
-                  </div>
-                </dl>
-              </article>
-            ))}
-          </div>
-        </section>
+        <p className={styles.statusLine}>後端狀態：{status}</p>
       </div>
     </main>
   );

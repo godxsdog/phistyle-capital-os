@@ -141,6 +141,24 @@ def fetch_fukuoka_status(flight_no: str, flight_date: str) -> dict[str, Any]:
     }
 
 
+def query_status(flight_no: str, flight_date: str) -> dict[str, Any]:
+    """Importable entry point for callers other than the CLI (e.g. the backend
+    /tools/flight-status endpoint). Normalizes the flight number the same way
+    main() does, fetches the current status, and returns both the raw
+    normalized record and a human-readable display string so callers don't
+    need to duplicate classify_status/status_display wiring.
+    """
+    normalized_flight_no = flight_no.upper().replace(" ", "")
+    status = fetch_fukuoka_status(normalized_flight_no, flight_date)
+    return {
+        "flight_no": normalized_flight_no,
+        "flight_date": flight_date,
+        "status": status.get("status"),
+        "display": status_display(status),
+        "raw": status,
+    }
+
+
 def http_json(method: str, url: str, headers: dict[str, str] | None = None, payload: dict[str, Any] | None = None) -> Any:
     body = json.dumps(payload).encode("utf-8") if payload is not None else None
     request = Request(url, data=body, method=method, headers=headers or {})

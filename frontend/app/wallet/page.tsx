@@ -200,6 +200,12 @@ export default function WalletPage() {
       window.localStorage.removeItem(PINNED_PREF_KEY);
       window.localStorage.removeItem(FAVORITE_PROGRAM_PREF_KEY);
     }
+    // Deep-link support so other pages (e.g. the launcher's 轉點規則 tile) can
+    // open a specific wallet tab directly, e.g. /wallet?tab=wanlitong.
+    const requestedTab = new URLSearchParams(window.location.search).get("tab");
+    if (requestedTab && (Object.keys(TAB_LABELS) as string[]).includes(requestedTab)) {
+      updatePrefs({ tab: requestedTab as WalletTab });
+    }
   }
 
   function updatePrefs(next: Partial<Preferences>) {

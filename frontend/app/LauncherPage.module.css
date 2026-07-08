@@ -1,0 +1,51 @@
+.grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.tile {
+  min-height: 96px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: inherit;
+  text-decoration: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 16px 10px;
+  text-align: center;
+  cursor: pointer;
+}
+
+.tile:active {
+  background: var(--bg);
+}
+
+.emoji {
+  font-size: 32px;
+  line-height: 1;
+}
+
+.label {
+  font-size: 15px;
+  font-weight: 760;
+}
+
+.statusLine {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+@media (max-width: 480px) {
+  .grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .tile {
+    min-height: 88px;
+  }
+}

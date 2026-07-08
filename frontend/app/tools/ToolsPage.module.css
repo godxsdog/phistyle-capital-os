@@ -1,0 +1,53 @@
+.fieldRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.statusDisplay {
+  border: 1px solid var(--line);
+  padding: 20px;
+  text-align: center;
+  font-size: 22px;
+  font-weight: 760;
+}
+
+.statusOk {
+  color: var(--success);
+}
+
+.statusWarn {
+  color: var(--warning);
+}
+
+.statusBad {
+  color: var(--danger);
+}
+
+.monitorRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.checkboxLine {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+}
+
+.checkboxLine input {
+  width: auto;
+}
+
+.metaLine {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+@media (max-width: 480px) {
+  .fieldRow {
+    grid-template-columns: 1fr;
+  }
+}
