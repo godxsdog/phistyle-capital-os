@@ -9,3 +9,5 @@ venv/
 node_modules/
 data-rescue/
 *.log
+frontend/.next/
+frontend/tsconfig.tsbuildinfo
