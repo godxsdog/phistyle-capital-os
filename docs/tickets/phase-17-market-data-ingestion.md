@@ -22,11 +22,18 @@ Daily-bar store for the backtester (18) and trade-plan mark-to-market
   positions by product, settlement/expiry calendar. Codex verifies the
   exact current download URLs/CSV formats at implementation time;
   needing to scrape beyond documented downloads = STOP.
-  (b) US stocks: Stooq free daily CSV (keyless, e.g.
-  https://stooq.com/q/d/l/?s=aapl.us&i=d) for watchlist tickers. If
-  Stooq is unavailable/unreliable at implementation time → STOP report
-  listing alternatives (Alpha Vantage free tier, yfinance) for user
-  decision; do NOT silently substitute.
+  (b) US stocks — SOURCE CHANGED BY FABLE 2026-07-08(Stooq 已被
+  Cloudflare JS 驗證擋死,Codex STOP 正確):改用 Yahoo Finance
+  公開 chart JSON 端點(keyless、stdlib urllib + 瀏覽器 User-Agent
+  header):
+  https://query1.finance.yahoo.com/v8/finance/chart/{SYMBOL}?range=10y&interval=1d
+  解析 timestamp/open/high/low/close/volume,另存 adjclose 於
+  close 欄?否——bars 存原始 OHLCV,adjclose 存入 open_interest
+  以外的方式不允許:v0 只存原始 close,並在資料健康頁註明
+  「未復權,除權息日會有跳空」(known limitation,回測 v0 接受)。
+  屬非官方端點:失敗即 fail loud 進 ingest_runs,不重試爬蟲。
+  此源也不可用時 → STOP 列 Alpha Vantage(需 key、25次/日)
+  供使用者決定。
 - SCHEDULER (Fable-decided): host-level cron on the Mac mini invoking
   `docker-compose exec backend python -m <ingest command>` once per
   weekday evening; the repo ships the command + a documented crontab
