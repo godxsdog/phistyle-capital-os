@@ -1,9 +1,11 @@
 # Ticket: Phase 17 — Market Data Ingestion v0 (TAIFEX + US daily bars)
 
-FABLE-APPROVED: yes (2026-07-06, written at session close for
-continuity; PRE-START REQUIREMENT: run a fresh-context Sonnet clarity
-review of this ticket before Codex begins; BLOCKER findings go to a
-new Fable session, lower findings may be fixed inline by the review.)
+FABLE-APPROVED: yes (2026-07-06).
+PRE-START SONNET REVIEW: COMPLETED 2026-07-08 (fresh-context Sonnet,
+run by Fable). Findings: 1 BLOCKER + 2 HIGH + 2 MEDIUM, all fixed in
+this ticket (runtime correction semantics, ingest_runs/
+settlement_calendar nullability, contract YYYYMM, TAIFEX not
+watchlist-gated). Codex may start.
 IMPLEMENTATION OWNER: Codex. REVIEW: Sonnet. VERDICT: a new Fable
 session with the completion report.
 DEPENDS ON: Phase 16 verdict ACCEPTED.
@@ -31,7 +33,13 @@ Daily-bar store for the backtester (18) and trade-plan mark-to-market
   line (user installs it — that is a deploy-side manual step). The
   in-repo scheduler stub may gain at most a manual-trigger endpoint.
 - Ingestion is idempotent per (source, date): re-running upserts
-  nothing new, never mutates existing rows (corrections = STOP).
+  nothing new, never mutates existing rows. RUNTIME correction
+  handling(這是執行期行為,不是實作期 STOP):若重抓值與既有列
+  不同,不覆寫,寫入一筆 ingest_runs status='correction_detected'
+  + detail(symbol/date/舊值/新值),繼續處理其餘列;
+  correction 顯示在資料健康頁供人工裁決。
+- TAIFEX 的 TX/MTX/TMF 為固定內建商品,不經 watchlist 閘控;
+  watchlist_symbols 只閘控美股標的。
 - Data-quality checks: gap detection (missing trading days vs
   calendar), duplicate dates; failures land in an ingest log table,
   never crash the job.
@@ -49,11 +57,13 @@ Daily-bar store for the backtester (18) and trade-plan mark-to-market
   Text NOT NULL; identity Text NOT NULL (dealer|trust|foreign);
   long_contracts/short_contracts/net_contracts Integer NOT NULL;
   UNIQUE(trade_date, product, identity).
-- ingest_runs: id PK; source Text; run_date Date; status Text;
-  detail Text NULL; started_at/finished_at timestamptz.
+- ingest_runs: id PK; source Text NOT NULL; run_date Date NOT NULL;
+  status Text NOT NULL; detail Text NULL; started_at timestamptz
+  NOT NULL; finished_at timestamptz NULL.
 - settlement calendar: store as rows in market_daily_bars? NO —
-  separate table settlement_calendar: id PK; product Text; contract
-  Text; last_trading_date Date; UNIQUE(product, contract).
+  separate table settlement_calendar: id PK; product Text NOT NULL;
+  contract Text NOT NULL(合約月份碼,格式 YYYYMM);
+  last_trading_date Date NOT NULL; UNIQUE(product, contract).
   (5 tables total — this ticket's stated migration scope.)
 - Endpoints: watchlist CRUD; POST /capital/market-data/ingest (manual
   trigger, per source, idempotent); GET sanity summary (per symbol:
@@ -79,7 +89,8 @@ proven pre-existing).
 
 ## 14. MANUAL VERIFICATION (user)
 
-After deploy+migration: add 台指期+2 US tickers to watchlist, trigger
+After deploy+migration: add 2 US tickers to watchlist (TAIFEX 內建
+不需加), trigger
 manual ingest, sanity page shows plausible rows; spot-check one date
 against TAIFEX site and one against Stooq; install the crontab line;
 confirm next-day auto-ingest ran (ingest_runs row).
