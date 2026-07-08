@@ -71,6 +71,30 @@
   gap: 12px;
 }
 
+.favoriteSettings {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 16px;
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+
+.favoriteOption {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 6px 8px;
+  align-items: center;
+  border: 1px solid var(--line);
+  background: #fff;
+  padding: 10px;
+}
+
+.favoriteOption small {
+  grid-column: 2;
+  color: var(--muted);
+}
+
 .sourceCard,
 .previewCard,
 .accountRow,
@@ -250,6 +274,7 @@
   .filterRow,
   .sourceHero,
   .sourceGrid,
+  .favoriteSettings,
   .transferHead,
   .transferRow,
   .inlineCalc,

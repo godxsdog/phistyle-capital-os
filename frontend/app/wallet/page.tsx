@@ -30,6 +30,13 @@ import {
   TAB_LABELS,
   WalletTab,
 } from "./constants";
+import {
+  FAVORITE_PROGRAM_PREF_KEY,
+  defaultFavoriteProgramIds,
+  findProgramByAliases,
+  programDisplayName,
+  sortPrograms,
+} from "./programPreferences";
 import styles from "./WalletPage.module.css";
 
 const PREF_KEY = "phistyle.wallet.source.preferences";
@@ -82,6 +89,8 @@ export default function WalletPage() {
   const [prefs, setPrefs] = useState<Preferences>(DEFAULT_PREFS);
   const [manualCosts, setManualCosts] = useState<ManualCosts>({});
   const [pinnedSources, setPinnedSources] = useState<number[]>([]);
+  const [favoriteProgramIds, setFavoriteProgramIds] = useState<number[]>([]);
+  const [favoritePrefsReady, setFavoritePrefsReady] = useState(false);
   const [programs, setPrograms] = useState<Program[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [rules, setRules] = useState<TransferRule[]>([]);
@@ -108,10 +117,20 @@ export default function WalletPage() {
     window.localStorage.setItem(PINNED_PREF_KEY, JSON.stringify(pinnedSources));
   }, [pinnedSources]);
 
+  useEffect(() => {
+    if (!favoritePrefsReady) return;
+    window.localStorage.setItem(FAVORITE_PROGRAM_PREF_KEY, JSON.stringify(favoriteProgramIds));
+  }, [favoritePrefsReady, favoriteProgramIds]);
+
+  const sortedPrograms = useMemo(() => sortPrograms(programs, favoriteProgramIds), [favoriteProgramIds, programs]);
+
   const sourcePrograms = useMemo(() => {
     const sourceIds = Array.from(new Set(rules.map((rule) => rule.from_program_id)));
-    return programs.filter((program) => sourceIds.includes(program.id) || pinnedSources.includes(program.id));
-  }, [pinnedSources, programs, rules]);
+    return sortPrograms(
+      programs.filter((program) => sourceIds.includes(program.id) || pinnedSources.includes(program.id)),
+      favoriteProgramIds,
+    );
+  }, [favoriteProgramIds, pinnedSources, programs, rules]);
 
   const activeSourceProgram = useMemo(() => {
     const primary = PRIMARY_SOURCE_TABS.find((item) => item.tab === prefs.tab);
@@ -129,6 +148,10 @@ export default function WalletPage() {
         getPortfolio("kent"),
         getPortfolio("wife"),
       ]);
+      if (!window.localStorage.getItem(FAVORITE_PROGRAM_PREF_KEY)) {
+        setFavoriteProgramIds(defaultFavoriteProgramIds(nextPrograms));
+        setFavoritePrefsReady(true);
+      }
       setPrograms(nextPrograms);
       setAccounts(nextAccounts);
       setRules(nextRules);
@@ -160,10 +183,16 @@ export default function WalletPage() {
       if (storedCosts) setManualCosts(JSON.parse(storedCosts) as ManualCosts);
       const storedPinned = window.localStorage.getItem(PINNED_PREF_KEY);
       if (storedPinned) setPinnedSources(JSON.parse(storedPinned) as number[]);
+      const storedFavorites = window.localStorage.getItem(FAVORITE_PROGRAM_PREF_KEY);
+      if (storedFavorites) {
+        setFavoriteProgramIds(JSON.parse(storedFavorites) as number[]);
+        setFavoritePrefsReady(true);
+      }
     } catch {
       window.localStorage.removeItem(PREF_KEY);
       window.localStorage.removeItem(COST_PREF_KEY);
       window.localStorage.removeItem(PINNED_PREF_KEY);
+      window.localStorage.removeItem(FAVORITE_PROGRAM_PREF_KEY);
     }
   }
 
@@ -213,11 +242,13 @@ export default function WalletPage() {
 
         {prefs.tab === "overview" ? (
           <OverviewPanel
-            programs={programs}
+            programs={sortedPrograms}
             sourcePrograms={sourcePrograms}
             portfolio={portfolioAll}
             kent={portfolioKent}
             wife={portfolioWife}
+            favoriteProgramIds={favoriteProgramIds}
+            setFavoriteProgramIds={setFavoriteProgramIds}
             openSource={(program) => {
               setPinnedSources((current) => (current.includes(program.id) ? current : [...current, program.id]));
               updatePrefs({ tab: primaryTabForProgram(program) || "otherSources" });
@@ -228,11 +259,14 @@ export default function WalletPage() {
         {activeSourceProgram ? (
           <SourceProgramPanel
             program={activeSourceProgram}
-            programs={programs}
-            rules={rules.filter((rule) => rule.from_program_id === activeSourceProgram.id)}
+            programs={sortedPrograms}
+            favoriteProgramIds={favoriteProgramIds}
+            rules={sortRulesByTargetProgram(rules.filter((rule) => rule.from_program_id === activeSourceProgram.id), sortedPrograms)}
             portfolioAll={portfolioAll}
             manualCost={manualCosts[String(activeSourceProgram.id)] || ""}
             setManualCost={(value) => setManualCosts((current) => ({ ...current, [String(activeSourceProgram.id)]: value }))}
+            prefs={prefs}
+            updatePrefs={updatePrefs}
             submit={submit}
           />
         ) : null}
@@ -246,16 +280,18 @@ export default function WalletPage() {
 
         {prefs.tab === "otherSources" ? (
           <OtherSourcesPanel
-            programs={programs}
+            programs={sortedPrograms}
             sourcePrograms={sourcePrograms}
             pinnedSources={pinnedSources}
+            favoriteProgramIds={favoriteProgramIds}
             setPinnedSources={setPinnedSources}
           />
         ) : null}
 
         {prefs.tab === "points" ? (
           <MyPointsPanel
-            programs={programs}
+            sortedPrograms={sortedPrograms}
+            favoriteProgramIds={favoriteProgramIds}
             accounts={accounts}
             portfolio={portfolioAll}
             prefs={prefs}
@@ -274,6 +310,8 @@ function OverviewPanel({
   portfolio,
   kent,
   wife,
+  favoriteProgramIds,
+  setFavoriteProgramIds,
   openSource,
 }: {
   programs: Program[];
@@ -281,12 +319,23 @@ function OverviewPanel({
   portfolio: Portfolio | null;
   kent: Portfolio | null;
   wife: Portfolio | null;
+  favoriteProgramIds: number[];
+  setFavoriteProgramIds: (value: number[] | ((current: number[]) => number[])) => void;
   openSource: (program: Program) => void;
 }) {
+  const [showFavorites, setShowFavorites] = useState(false);
   return (
     <>
       <section className="panel">
-        <h2>總覽</h2>
+        <div className={styles.sectionHeader}>
+          <div>
+            <h2>總覽</h2>
+            <p className="subtle">常用計畫會排在所有下拉選單與來源列表前面。</p>
+          </div>
+          <button className="button" type="button" onClick={() => setShowFavorites((value) => !value)}>
+            ⭐常用設定
+          </button>
+        </div>
         <div className="data-grid">
           <div>
             <dt>兩人合計真實成本</dt>
@@ -305,6 +354,9 @@ function OverviewPanel({
             <dd>{sourcePrograms.length} 個</dd>
           </div>
         </div>
+        {showFavorites ? (
+          <FavoriteSettings programs={programs} favoriteProgramIds={favoriteProgramIds} setFavoriteProgramIds={setFavoriteProgramIds} />
+        ) : null}
       </section>
 
       <section className="panel">
@@ -312,7 +364,7 @@ function OverviewPanel({
         <div className={styles.sourceGrid}>
           {sourcePrograms.map((program) => (
             <article className={styles.sourceCard} key={program.id}>
-              <h3>{program.name}</h3>
+              <h3>{programDisplayName(program, favoriteProgramIds)}</h3>
               <p>{KIND_LABELS.programKind[program.kind] || program.kind}</p>
               <button className="button" type="button" onClick={() => openSource(program)}>
                 開啟來源頁
@@ -328,7 +380,7 @@ function OverviewPanel({
         <Table
           columns={["計畫", "類型", "到期規則"]}
           rows={programs.map((program) => [
-            program.name,
+            programDisplayName(program, favoriteProgramIds),
             KIND_LABELS.programKind[program.kind] || program.kind,
             program.expiry_rule_note || "未設定",
           ])}
@@ -338,21 +390,59 @@ function OverviewPanel({
   );
 }
 
+function FavoriteSettings({
+  programs,
+  favoriteProgramIds,
+  setFavoriteProgramIds,
+}: {
+  programs: Program[];
+  favoriteProgramIds: number[];
+  setFavoriteProgramIds: (value: number[] | ((current: number[]) => number[])) => void;
+}) {
+  return (
+    <div className={styles.favoriteSettings}>
+      {programs.map((program) => (
+        <label className={styles.favoriteOption} key={program.id}>
+          <input
+            type="checkbox"
+            checked={favoriteProgramIds.includes(program.id)}
+            onChange={(event) => {
+              setFavoriteProgramIds((current) => (
+                event.target.checked
+                  ? [...current, program.id]
+                  : current.filter((id) => id !== program.id)
+              ));
+            }}
+          />
+          <span>{programDisplayName(program, favoriteProgramIds)}</span>
+          <small>{KIND_LABELS.programKind[program.kind] || program.kind}</small>
+        </label>
+      ))}
+    </div>
+  );
+}
+
 function SourceProgramPanel({
   program,
   programs,
+  favoriteProgramIds,
   rules,
   portfolioAll,
   manualCost,
   setManualCost,
+  prefs,
+  updatePrefs,
   submit,
 }: {
   program: Program;
   programs: Program[];
+  favoriteProgramIds: number[];
   rules: TransferRule[];
   portfolioAll: Portfolio | null;
   manualCost: string;
   setManualCost: (value: string) => void;
+  prefs: Preferences;
+  updatePrefs: (next: Partial<Preferences>) => void;
   submit: (action: () => Promise<unknown>, message: string) => Promise<void>;
 }) {
   const [quickTargetId, setQuickTargetId] = useState("");
@@ -360,7 +450,9 @@ function SourceProgramPanel({
   const cost = Number(manualCost || sourceAvgCost(portfolioAll, program.id) || 0);
   const balances = ownerBalances(portfolioAll, program.id);
   const targetPrograms = programs.filter((item) => rules.some((rule) => rule.to_program_id === item.id));
-  const activeQuickRule = rules.find((rule) => String(rule.to_program_id) === (quickTargetId || String(targetPrograms[0]?.id || "")));
+  const defaultTargetId = String(targetPrograms.find((item) => String(item.id) === prefs.targetProgramId)?.id || targetPrograms[0]?.id || "");
+  const selectedQuickTargetId = quickTargetId || defaultTargetId;
+  const activeQuickRule = rules.find((rule) => String(rule.to_program_id) === selectedQuickTargetId);
   const quick = activeQuickRule ? calculateRequiredSourcePoints(activeQuickRule, Number(quickQuantity || 0)) : null;
 
   return (
@@ -369,7 +461,7 @@ function SourceProgramPanel({
         <div className={styles.sourceHero}>
           <div>
             <div className="section-kicker">來源計畫</div>
-            <h2>{program.name}</h2>
+            <h2>{programDisplayName(program, favoriteProgramIds)}</h2>
             <p className="subtle">這一頁只回答：我有多少、每點成本多少、可以轉去哪裡、要送多少點才夠。</p>
           </div>
           <label className={styles.inlineField}>
@@ -429,6 +521,7 @@ function SourceProgramPanel({
                 key={rule.id}
                 rule={rule}
                 programs={programs}
+                favoriteProgramIds={favoriteProgramIds}
                 sourceCost={cost}
                 submit={submit}
               />
@@ -438,18 +531,31 @@ function SourceProgramPanel({
       </section>
 
       <div className={styles.grid}>
-        <TransferRuleCreatePanel program={program} programs={programs} submit={submit} />
-        <AiParsePanel sourceProgram={program} programs={programs} submit={submit} />
+        <TransferRuleCreatePanel
+          program={program}
+          programs={programs}
+          favoriteProgramIds={favoriteProgramIds}
+          selectedTargetProgramId={prefs.targetProgramId}
+          updatePrefs={updatePrefs}
+          submit={submit}
+        />
+        <AiParsePanel sourceProgram={program} programs={programs} favoriteProgramIds={favoriteProgramIds} submit={submit} />
       </div>
 
       <section className="panel">
         <h2>快速試算器</h2>
         <div className={styles.inlineCalc}>
           <span>我要</span>
-          <select value={quickTargetId || String(targetPrograms[0]?.id || "")} onChange={(event) => setQuickTargetId(event.target.value)}>
+          <select
+            value={selectedQuickTargetId}
+            onChange={(event) => {
+              setQuickTargetId(event.target.value);
+              updatePrefs({ targetProgramId: event.target.value });
+            }}
+          >
             {targetPrograms.length === 0 ? <option value="">沒有可用目的地</option> : null}
             {targetPrograms.map((item) => (
-              <option key={item.id} value={item.id}>{item.name}</option>
+              <option key={item.id} value={item.id}>{programDisplayName(item, favoriteProgramIds)}</option>
             ))}
           </select>
           <input value={quickQuantity} onChange={(event) => setQuickQuantity(event.target.value)} inputMode="numeric" />
@@ -458,7 +564,7 @@ function SourceProgramPanel({
         {quick && activeQuickRule ? (
           <div className="data-grid">
             <div>
-              <dt>需送出 {program.name}</dt>
+              <dt>需送出 {programDisplayName(program, favoriteProgramIds)}</dt>
               <dd>{formatNumber(quick.requiredSourcePoints)} 點</dd>
             </div>
             <div>
@@ -485,11 +591,13 @@ function SourceProgramPanel({
 function TransferRuleRow({
   rule,
   programs,
+  favoriteProgramIds,
   sourceCost,
   submit,
 }: {
   rule: TransferRule;
   programs: Program[];
+  favoriteProgramIds: number[];
   sourceCost: number;
   submit: (action: () => Promise<unknown>, message: string) => Promise<void>;
 }) {
@@ -510,7 +618,7 @@ function TransferRuleRow({
       <div>
         <select value={draft.to_program_id} onChange={(event) => updateDraft("to_program_id", event.target.value)}>
           {programs.map((program) => (
-            <option key={program.id} value={program.id}>{program.name}</option>
+            <option key={program.id} value={program.id}>{programDisplayName(program, favoriteProgramIds)}</option>
           ))}
         </select>
         {rule.source_url ? <a href={rule.source_url} target="_blank" rel="noreferrer">查證</a> : <span className="subtle">未填查證連結</span>}
@@ -554,20 +662,33 @@ function TransferRuleRow({
 function TransferRuleCreatePanel({
   program,
   programs,
+  favoriteProgramIds,
+  selectedTargetProgramId,
+  updatePrefs,
   submit,
 }: {
   program: Program;
   programs: Program[];
+  favoriteProgramIds: number[];
+  selectedTargetProgramId: string;
+  updatePrefs: (next: Partial<Preferences>) => void;
   submit: (action: () => Promise<unknown>, message: string) => Promise<void>;
 }) {
+  const targetPrograms = programs.filter((item) => item.id !== program.id);
+  const selectedId = String(targetPrograms.find((item) => String(item.id) === selectedTargetProgramId)?.id || targetPrograms[0]?.id || "");
   return (
     <FormPanel title="+新增兌換規則" description="手動新增一條來源計畫規則；比例請填送出數量與實得數量。">
       {(form) => (
         <>
-          <select name="to_program_id" required>
+          <select
+            name="to_program_id"
+            value={selectedId}
+            onChange={(event) => updatePrefs({ targetProgramId: event.target.value })}
+            required
+          >
             <option value="">選擇目標計畫</option>
-            {programs.filter((item) => item.id !== program.id).map((item) => (
-              <option key={item.id} value={item.id}>{item.name}</option>
+            {targetPrograms.map((item) => (
+              <option key={item.id} value={item.id}>{programDisplayName(item, favoriteProgramIds)}</option>
             ))}
           </select>
           <select name="rule_kind" defaultValue="linear">
@@ -612,10 +733,12 @@ function TransferRuleCreatePanel({
 function AiParsePanel({
   sourceProgram,
   programs,
+  favoriteProgramIds,
   submit,
 }: {
   sourceProgram: Program;
   programs: Program[];
+  favoriteProgramIds: number[];
   submit: (action: () => Promise<unknown>, message: string) => Promise<void>;
 }) {
   const [text, setText] = useState("");
@@ -640,7 +763,7 @@ function AiParsePanel({
       {message ? <p className="subtle">{message}</p> : null}
       {preview ? (
         <div className={styles.previewCard}>
-          <strong>待確認：{sourceProgram.name} → {preview.to_program_name || "未辨識目的地"}</strong>
+          <strong>待確認：{programDisplayName(sourceProgram, favoriteProgramIds)} → {target ? programDisplayName(target, favoriteProgramIds) : preview.to_program_name || "未辨識目的地"}</strong>
           <p>比例 {preview.ratio_from || "?"} : {preview.ratio_to || "?"}，加贈 {preview.bonus_pct || "0"}%</p>
           <p>{humanThreshold(preview.rule_kind || "linear", preview.block_size, preview.block_bonus_points)}</p>
           <button
@@ -676,11 +799,13 @@ function OtherSourcesPanel({
   programs,
   sourcePrograms,
   pinnedSources,
+  favoriteProgramIds,
   setPinnedSources,
 }: {
   programs: Program[];
   sourcePrograms: Program[];
   pinnedSources: number[];
+  favoriteProgramIds: number[];
   setPinnedSources: (value: number[] | ((current: number[]) => number[])) => void;
 }) {
   const sourceIds = new Set(sourcePrograms.map((program) => program.id));
@@ -692,7 +817,7 @@ function OtherSourcesPanel({
       <div className={styles.sourceGrid}>
         {candidates.map((program) => (
           <article className={styles.sourceCard} key={program.id}>
-            <h3>{program.name}</h3>
+            <h3>{programDisplayName(program, favoriteProgramIds)}</h3>
             <p>{KIND_LABELS.programKind[program.kind] || program.kind}</p>
             <button
               className="button"
@@ -710,14 +835,16 @@ function OtherSourcesPanel({
 }
 
 function MyPointsPanel({
-  programs,
+  sortedPrograms,
+  favoriteProgramIds,
   accounts,
   portfolio,
   prefs,
   updatePrefs,
   submit,
 }: {
-  programs: Program[];
+  sortedPrograms: Program[];
+  favoriteProgramIds: number[];
   accounts: Account[];
   portfolio: Portfolio | null;
   prefs: Preferences;
@@ -738,6 +865,7 @@ function MyPointsPanel({
                 key={account.id}
                 account={account}
                 row={row}
+                favoriteProgramIds={favoriteProgramIds}
                 prefs={prefs}
                 updatePrefs={updatePrefs}
                 submit={submit}
@@ -750,7 +878,13 @@ function MyPointsPanel({
 
       <div className={styles.grid}>
         <ProgramForm submit={submit} />
-        <AccountForm programs={programs} submit={submit} />
+        <AccountForm
+          programs={sortedPrograms}
+          favoriteProgramIds={favoriteProgramIds}
+          selectedProgramId={prefs.programId}
+          updatePrefs={updatePrefs}
+          submit={submit}
+        />
       </div>
     </>
   );
@@ -759,12 +893,14 @@ function MyPointsPanel({
 function AccountRow({
   account,
   row,
+  favoriteProgramIds,
   prefs,
   updatePrefs,
   submit,
 }: {
   account: Account;
   row: Record<string, string | number | null>;
+  favoriteProgramIds: number[];
   prefs: Preferences;
   updatePrefs: (next: Partial<Preferences>) => void;
   submit: (action: () => Promise<unknown>, message: string) => Promise<void>;
@@ -773,7 +909,7 @@ function AccountRow({
   return (
     <article className={styles.accountRow}>
       <div>
-        <strong>{OWNER_LABELS[account.owner] || account.owner} · {String(row.program_name)}</strong>
+        <strong>{OWNER_LABELS[account.owner] || account.owner} · {favoriteLabelFromName(String(row.program_name), favoriteProgramIds, account.program_id)}</strong>
         <p className="subtle">餘額 {formatNumber(row.balance)}，每點成本 {costPerPoint(row.avg_cost_per_point_twd)}，到期 {String(row.expires_at || "未設定")}</p>
       </div>
       <button className="button" type="button" onClick={() => setOpen((value) => !value)}>
@@ -853,9 +989,15 @@ function ProgramForm({
 
 function AccountForm({
   programs,
+  favoriteProgramIds,
+  selectedProgramId,
+  updatePrefs,
   submit,
 }: {
   programs: Program[];
+  favoriteProgramIds: number[];
+  selectedProgramId: string;
+  updatePrefs: (next: Partial<Preferences>) => void;
   submit: (action: () => Promise<unknown>, message: string) => Promise<void>;
 }) {
   return (
@@ -866,7 +1008,12 @@ function AccountForm({
             <option value="kent">凱章</option>
             <option value="wife">老婆</option>
           </select>
-          <ProgramSelect programs={programs} />
+          <ProgramSelect
+            programs={programs}
+            favoriteProgramIds={favoriteProgramIds}
+            value={selectedProgramId}
+            onChange={(value) => updatePrefs({ programId: value })}
+          />
           <input name="account_ref" placeholder="帳號末四碼或備註，不填也可以" />
           <input name="notes" placeholder="帳戶備註" />
           <button
@@ -904,11 +1051,24 @@ function FormPanel({ title, description, children }: { title: string; descriptio
   );
 }
 
-function ProgramSelect({ programs, name = "program_id" }: { programs: Program[]; name?: string }) {
+function ProgramSelect({
+  programs,
+  favoriteProgramIds,
+  value,
+  onChange,
+  name = "program_id",
+}: {
+  programs: Program[];
+  favoriteProgramIds: number[];
+  value?: string;
+  onChange?: (value: string) => void;
+  name?: string;
+}) {
+  const selectedValue = String(programs.find((program) => String(program.id) === value)?.id || programs[0]?.id || "");
   return (
-    <select name={name} required>
+    <select name={name} value={selectedValue} onChange={(event) => onChange?.(event.target.value)} required>
       <option value="">選擇計畫</option>
-      {programs.map((program) => <option key={program.id} value={program.id}>{program.name}</option>)}
+      {programs.map((program) => <option key={program.id} value={program.id}>{programDisplayName(program, favoriteProgramIds)}</option>)}
     </select>
   );
 }
@@ -1029,15 +1189,25 @@ function sourceAvgCost(portfolio: Portfolio | null, programId: number): string {
   return String(costs.reduce((sum, value) => sum + value, 0) / costs.length);
 }
 
-function findProgramByAliases(programs: Program[], aliases: string[]): Program | null {
-  return programs.find((program) => aliases.some((alias) => program.name.toLowerCase().includes(alias.toLowerCase()))) || null;
-}
-
 function primaryTabForProgram(program: Program): WalletTab | null {
   for (const item of PRIMARY_SOURCE_TABS) {
     if (item.aliases.some((alias) => program.name.toLowerCase().includes(alias.toLowerCase()))) return item.tab;
   }
   return null;
+}
+
+function sortRulesByTargetProgram(rules: TransferRule[], sortedPrograms: Program[]): TransferRule[] {
+  const programOrder = new Map(sortedPrograms.map((program, index) => [program.id, index]));
+  return [...rules].sort((left, right) => {
+    const leftRank = programOrder.get(left.to_program_id) ?? 9999;
+    const rightRank = programOrder.get(right.to_program_id) ?? 9999;
+    if (leftRank !== rightRank) return leftRank - rightRank;
+    return left.id - right.id;
+  });
+}
+
+function favoriteLabelFromName(name: string, favoriteProgramIds: number[], programId: number): string {
+  return `${favoriteProgramIds.includes(programId) ? "⭐ " : ""}${name}`;
 }
 
 function field(form: HTMLFormElement, name: string): string {

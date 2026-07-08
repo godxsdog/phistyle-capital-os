@@ -14,6 +14,12 @@ import {
 } from "../../../lib/walletApi";
 import { CURRENCY_OPTIONS, OWNER_LABELS } from "../constants";
 import styles from "../WalletPage.module.css";
+import {
+  FAVORITE_PROGRAM_PREF_KEY,
+  defaultFavoriteProgramIds,
+  programDisplayName,
+  sortPrograms,
+} from "../programPreferences";
 
 const PREF_KEY = "phistyle.wallet.award.preferences";
 
@@ -29,6 +35,7 @@ const DEFAULT_PREFS: AwardPrefs = {
 
 export default function WalletAwardsPage() {
   const [prefs, setPrefs] = useState<AwardPrefs>(DEFAULT_PREFS);
+  const [favoriteProgramIds, setFavoriteProgramIds] = useState<number[]>([]);
   const [programs, setPrograms] = useState<Program[]>([]);
   const [quotes, setQuotes] = useState<AwardQuote[]>([]);
   const [selectedQuoteId, setSelectedQuoteId] = useState("");
@@ -39,6 +46,8 @@ export default function WalletAwardsPage() {
 
   useEffect(() => {
     const stored = window.localStorage.getItem(PREF_KEY);
+    const storedFavorites = window.localStorage.getItem(FAVORITE_PROGRAM_PREF_KEY);
+    if (storedFavorites) setFavoriteProgramIds(JSON.parse(storedFavorites) as number[]);
     if (!stored) return;
     try {
       setPrefs({ ...DEFAULT_PREFS, ...(JSON.parse(stored) as Partial<AwardPrefs>) });
@@ -59,13 +68,21 @@ export default function WalletAwardsPage() {
     () => quotes.find((quote) => String(quote.id) === selectedQuoteId) || quotes[0],
     [quotes, selectedQuoteId],
   );
+  const sortedPrograms = useMemo(() => sortPrograms(programs, favoriteProgramIds), [favoriteProgramIds, programs]);
   const winner = scenarios[0] || null;
 
   async function loadPage() {
     try {
       const [nextPrograms, nextQuotes] = await Promise.all([listPrograms(), listAwardQuotes()]);
+      const storedFavorites = window.localStorage.getItem(FAVORITE_PROGRAM_PREF_KEY);
+      const nextFavorites = storedFavorites ? JSON.parse(storedFavorites) as number[] : defaultFavoriteProgramIds(nextPrograms);
+      if (!storedFavorites) window.localStorage.setItem(FAVORITE_PROGRAM_PREF_KEY, JSON.stringify(nextFavorites));
+      setFavoriteProgramIds(nextFavorites);
       setPrograms(nextPrograms);
       setQuotes(nextQuotes);
+      if (!prefs.programId && nextFavorites.length > 0) {
+        setPrefs((current) => ({ ...current, programId: String(nextFavorites[0]) }));
+      }
       const nextSelected = selectedQuoteId || String(nextQuotes[0]?.id || "");
       setSelectedQuoteId(nextSelected);
       if (nextSelected) setScenarios(await listFundingScenarios(Number(nextSelected)));
@@ -145,7 +162,7 @@ export default function WalletAwardsPage() {
             <span>我要</span>
             <select name="program_id" value={prefs.programId} onChange={(event) => setPrefs({ ...prefs, programId: event.target.value })} required>
               <option value="">計畫</option>
-              {programs.map((program) => <option key={program.id} value={program.id}>{program.name}</option>)}
+              {sortedPrograms.map((program) => <option key={program.id} value={program.id}>{programDisplayName(program, favoriteProgramIds)}</option>)}
             </select>
             <input name="miles_required" placeholder="哩數" inputMode="numeric" required />
             <span>哩，稅金</span>
@@ -175,7 +192,7 @@ export default function WalletAwardsPage() {
             }}
           >
             {quotes.length === 0 ? <option value="">目前沒有票券需求</option> : null}
-            {quotes.map((quote) => <option key={quote.id} value={quote.id}>{quoteLabel(quote, programs)}</option>)}
+            {quotes.map((quote) => <option key={quote.id} value={quote.id}>{quoteLabel(quote, programs, favoriteProgramIds)}</option>)}
           </select>
         </section>
 
@@ -235,9 +252,10 @@ function field(data: FormData, name: string): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function quoteLabel(quote: AwardQuote, programs: Program[]): string {
-  const program = programs.find((item) => item.id === quote.program_id)?.name || "未命名計畫";
-  return `${program} · ${formatNumber(quote.miles_required)} 哩 · 稅金 ${quote.taxes_amount || 0} ${quote.taxes_currency || "TWD"}`;
+function quoteLabel(quote: AwardQuote, programs: Program[], favoriteProgramIds: number[]): string {
+  const program = programs.find((item) => item.id === quote.program_id);
+  const programName = program ? programDisplayName(program, favoriteProgramIds) : "未命名計畫";
+  return `${programName} · ${formatNumber(quote.miles_required)} 哩 · 稅金 ${quote.taxes_amount || 0} ${quote.taxes_currency || "TWD"}`;
 }
 
 function humanScenario(scenario: FundingScenario): string {
