@@ -10,7 +10,7 @@ Mac mini setup:
   2. On the Mac mini, set environment values in the crontab line below:
      TELEGRAM_BOT_TOKEN=<bot token>
      TELEGRAM_CHAT_ID=<your chat id>
-     Optional: AIRASIA_FLIGHTSTATUS_TOKEN=<Bearer token if AirAsia requires one>
+     Optional: AIRASIA_FLIGHTSTATUS_TOKEN=<short-lived AirAsia Bearer token copied from browser Network tab>
   3. crontab -e, then add:
      */20 * * * * TELEGRAM_BOT_TOKEN=... TELEGRAM_CHAT_ID=... /usr/bin/python3 /Users/kaichanghuang/Server/phistyle-capital-os/tools/flight_watch.py >> /tmp/flight_watch.log 2>&1
 
@@ -80,8 +80,14 @@ def fetch_airasia_status() -> dict[str, Any]:
     params = urlencode({"flightNo": FLIGHT_NO, "date": FLIGHT_DATE})
     url = f"{AIRASIA_ENDPOINT}?{params}"
     headers = {
-        "Accept": "application/json",
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "en-US,en;q=0.9,zh-TW;q=0.8,zh;q=0.7,ja;q=0.6,zh-CN;q=0.5",
         "Content-Type": "application/json",
+        "Origin": "https://www.airasia.com",
+        "Referer": "https://www.airasia.com/",
+        "Sec-Fetch-Dest": "empty",
+        "Sec-Fetch-Mode": "cors",
+        "Sec-Fetch-Site": "same-site",
         "User-Agent": "Mozilla/5.0 flight-watch/1.0",
     }
     bearer_token = os.getenv("AIRASIA_FLIGHTSTATUS_TOKEN", "").strip()
