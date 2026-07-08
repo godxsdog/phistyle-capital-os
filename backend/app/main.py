@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -139,6 +139,17 @@ from shared.services.trade_import_service import (
     list_realized_trades,
     list_trade_fills,
     warnings_for_batch,
+)
+from shared.services.market_data_service import (
+    MarketDataError,
+    create_watchlist_symbol,
+    delete_watchlist_symbol,
+    ingest_taifex,
+    ingest_yahoo_us,
+    list_ingest_runs,
+    list_watchlist_symbols,
+    market_sanity_summary,
+    update_watchlist_symbol,
 )
 
 
@@ -407,6 +418,49 @@ class TradeAttributionResponse(BaseModel):
     averaging_down: list[dict[str, Any]]
     leveraged_symbols: list[str]
     narrative: dict[str, Any]
+
+
+class MarketWatchlistRequest(BaseModel):
+    market: str = "us"
+    symbol: str
+    active: bool = True
+
+
+class MarketWatchlistResponse(BaseModel):
+    id: int
+    market: str
+    symbol: str
+    active: bool
+
+
+class MarketIngestRequest(BaseModel):
+    source: str = "all"
+    start_date: date | None = None
+    end_date: date | None = None
+
+
+class MarketIngestResponse(BaseModel):
+    results: list[dict[str, Any]]
+
+
+class MarketSanityResponse(BaseModel):
+    market: str
+    symbol: str
+    first_date: str | None
+    last_date: str | None
+    row_count: int
+    gap_count: int
+    note: str | None = None
+
+
+class MarketIngestRunResponse(BaseModel):
+    id: int
+    source: str
+    run_date: str
+    status: str
+    detail: str | None
+    started_at: str
+    finished_at: str | None
 
 
 class PointProgramRequest(BaseModel):
@@ -937,6 +991,67 @@ def get_capital_realized_trades(
 @app.get("/capital/trade-attribution", response_model=TradeAttributionResponse)
 def get_capital_trade_attribution(session: Session = Depends(get_session)) -> dict[str, Any]:
     return get_trade_attribution_metrics(session)
+
+
+@app.get("/capital/market-data/watchlist", response_model=list[MarketWatchlistResponse])
+def get_capital_market_watchlist(market: str | None = None, session: Session = Depends(get_session)) -> list[dict[str, Any]]:
+    return [_market_watchlist_response(row) for row in list_watchlist_symbols(session, market=market)]
+
+
+@app.post("/capital/market-data/watchlist", response_model=MarketWatchlistResponse)
+def post_capital_market_watchlist(payload: MarketWatchlistRequest, session: Session = Depends(get_session)) -> dict[str, Any]:
+    try:
+        row = create_watchlist_symbol(session, market=payload.market, symbol=payload.symbol, active=payload.active)
+    except MarketDataError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return _market_watchlist_response(row)
+
+
+@app.patch("/capital/market-data/watchlist/{symbol_id}", response_model=MarketWatchlistResponse)
+def patch_capital_market_watchlist(
+    symbol_id: int,
+    payload: MarketWatchlistRequest,
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    try:
+        row = update_watchlist_symbol(session, symbol_id=symbol_id, active=payload.active)
+    except MarketDataError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return _market_watchlist_response(row)
+
+
+@app.delete("/capital/market-data/watchlist/{symbol_id}")
+def delete_capital_market_watchlist(symbol_id: int, session: Session = Depends(get_session)) -> dict[str, bool]:
+    try:
+        delete_watchlist_symbol(session, symbol_id=symbol_id)
+    except MarketDataError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"deleted": True}
+
+
+@app.post("/capital/market-data/ingest", response_model=MarketIngestResponse)
+def post_capital_market_data_ingest(payload: MarketIngestRequest, session: Session = Depends(get_session)) -> dict[str, Any]:
+    source = payload.source.lower()
+    if source not in {"taifex", "yahoo", "all"}:
+        raise HTTPException(status_code=422, detail="source must be taifex, yahoo, or all")
+    end_date = payload.end_date or date.today()
+    start_date = payload.start_date or end_date - timedelta(days=365 * 3 + 7)
+    results = []
+    if source in {"taifex", "all"}:
+        results.append(_market_ingest_result_response(ingest_taifex(session, start_date=start_date, end_date=end_date)))
+    if source in {"yahoo", "all"}:
+        results.append(_market_ingest_result_response(ingest_yahoo_us(session)))
+    return {"results": results}
+
+
+@app.get("/capital/market-data/sanity", response_model=list[MarketSanityResponse])
+def get_capital_market_data_sanity(session: Session = Depends(get_session)) -> list[dict[str, Any]]:
+    return market_sanity_summary(session)
+
+
+@app.get("/capital/market-data/ingest-runs", response_model=list[MarketIngestRunResponse])
+def get_capital_market_data_ingest_runs(session: Session = Depends(get_session)) -> list[dict[str, Any]]:
+    return [_market_ingest_run_response(row) for row in list_ingest_runs(session)]
 
 
 @app.get("/wallet/programs", response_model=list[PointProgramResponse])
@@ -2172,6 +2287,37 @@ def _expiry_alert_response(row: ExpiryAlert) -> dict[str, Any]:
         "status": row.status,
         "message": row.message,
         "created_at": row.created_at.isoformat(),
+    }
+
+
+def _market_watchlist_response(row) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "market": row.market,
+        "symbol": row.symbol,
+        "active": row.active,
+    }
+
+
+def _market_ingest_result_response(result) -> dict[str, Any]:
+    return {
+        "source": result.source,
+        "status": result.status,
+        "inserted": result.inserted,
+        "skipped": result.skipped,
+        "warnings": result.warnings,
+    }
+
+
+def _market_ingest_run_response(row) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "source": row.source,
+        "run_date": row.run_date.isoformat(),
+        "status": row.status,
+        "detail": row.detail,
+        "started_at": row.started_at.isoformat(),
+        "finished_at": row.finished_at.isoformat() if row.finished_at is not None else None,
     }
 
 

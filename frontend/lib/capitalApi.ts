@@ -163,6 +163,43 @@ export type TradeAttributionMetrics = {
   };
 };
 
+export type MarketWatchlistSymbol = {
+  id: number;
+  market: "us" | "taifex" | string;
+  symbol: string;
+  active: boolean;
+};
+
+export type MarketSanityRow = {
+  market: string;
+  symbol: string;
+  first_date: string | null;
+  last_date: string | null;
+  row_count: number;
+  gap_count: number;
+  note: string | null;
+};
+
+export type MarketIngestRun = {
+  id: number;
+  source: string;
+  run_date: string;
+  status: string;
+  detail: string | null;
+  started_at: string;
+  finished_at: string | null;
+};
+
+export type MarketIngestResult = {
+  results: Array<{
+    source: string;
+    status: string;
+    inserted: number;
+    skipped: number;
+    warnings: string[];
+  }>;
+};
+
 export async function listCapitalDecisions(): Promise<CapitalDecisionListItem[]> {
   return requestJson<CapitalDecisionListItem[]>("/capital/decisions");
 }
@@ -213,6 +250,45 @@ export async function listRealizedTrades(): Promise<RealizedTrade[]> {
 
 export async function getTradeAttribution(): Promise<TradeAttributionMetrics> {
   return requestJson<TradeAttributionMetrics>("/capital/trade-attribution");
+}
+
+export async function listMarketWatchlist(): Promise<MarketWatchlistSymbol[]> {
+  return requestJson<MarketWatchlistSymbol[]>("/capital/market-data/watchlist");
+}
+
+export async function createMarketWatchlistSymbol(symbol: string): Promise<MarketWatchlistSymbol> {
+  return requestJson<MarketWatchlistSymbol>("/capital/market-data/watchlist", {
+    method: "POST",
+    body: JSON.stringify({ market: "us", symbol, active: true }),
+  });
+}
+
+export async function updateMarketWatchlistSymbol(id: number, symbol: string, active: boolean): Promise<MarketWatchlistSymbol> {
+  return requestJson<MarketWatchlistSymbol>(`/capital/market-data/watchlist/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ market: "us", symbol, active }),
+  });
+}
+
+export async function deleteMarketWatchlistSymbol(id: number): Promise<{ deleted: boolean }> {
+  return requestJson<{ deleted: boolean }>(`/capital/market-data/watchlist/${id}`, {
+    method: "DELETE",
+  });
+}
+
+export async function runMarketIngest(source: "taifex" | "yahoo" | "all"): Promise<MarketIngestResult> {
+  return requestJson<MarketIngestResult>("/capital/market-data/ingest", {
+    method: "POST",
+    body: JSON.stringify({ source }),
+  });
+}
+
+export async function listMarketSanity(): Promise<MarketSanityRow[]> {
+  return requestJson<MarketSanityRow[]>("/capital/market-data/sanity");
+}
+
+export async function listMarketIngestRuns(): Promise<MarketIngestRun[]> {
+  return requestJson<MarketIngestRun[]>("/capital/market-data/ingest-runs");
 }
 
 async function requestJson<T>(path: string, init: RequestInit = {}): Promise<T> {
