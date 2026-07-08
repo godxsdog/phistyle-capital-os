@@ -39,7 +39,7 @@ from shared.models.knowledge import (
     StorageBackend,
 )
 from shared.models.human_review import HumanReviewDecision
-from shared.models.point_wallet import PointProgram, TransferRule
+from shared.models.point_wallet import AwardSnapshot, AwardWatch, ExpiryAlert, PointProgram, TransferRule
 from shared.models.triage import TriageRecommendation, TriageResult, TriageRiskLevel
 from shared.services.brain_review_service import (
     create_brain_review,
@@ -104,6 +104,18 @@ from shared.services.point_wallet_service import (
     list_programs,
     list_purchase_offers,
     list_transfer_rules,
+)
+from shared.services.seats_aero_service import (
+    SeatsAeroError,
+    create_award_watch,
+    delete_award_watch,
+    fetch_award_watch,
+    list_award_snapshots,
+    list_award_watches,
+    list_expiry_alerts,
+    promote_snapshot_to_award_quote,
+    scan_expiry_alerts,
+    update_award_watch,
 )
 from shared.services.decision_request_service import (
     DecisionRequestStatusTransitionError,
@@ -611,6 +623,65 @@ class FundingScenarioResponse(BaseModel):
     points_acquired: str
     points_consumed: str
     points_leftover: str
+
+
+class AwardWatchRequest(BaseModel):
+    origin: str
+    destination: str
+    cabin: str
+    start_date: date | None = None
+    end_date: date | None = None
+    program_id: int | None = None
+    active: bool = True
+    note: str | None = None
+
+
+class AwardWatchResponse(BaseModel):
+    id: int
+    origin: str
+    destination: str
+    cabin: str
+    start_date: str | None
+    end_date: str | None
+    program_id: int | None
+    active: bool
+    note: str | None
+    created_at: str
+    updated_at: str
+
+
+class AwardWatchFetchRequest(BaseModel):
+    seen_date: date | None = None
+
+
+class AwardSnapshotResponse(BaseModel):
+    id: int
+    watch_id: int
+    seen_date: str
+    status: str
+    result_count: int
+    normalized_json: str
+    created_at: str
+
+
+class AwardSnapshotPromoteRequest(BaseModel):
+    item_index: int = 0
+
+
+class AwardSnapshotPromoteResponse(BaseModel):
+    award_quote: AwardQuoteResponse
+
+
+class ExpiryAlertResponse(BaseModel):
+    id: int
+    account_id: int
+    threshold_days: int
+    expires_at: str
+    checked_on: str
+    balance: str
+    status: str
+    message: str
+    created_at: str
 
 
 class FxRateResponse(BaseModel):
@@ -1175,6 +1246,119 @@ def get_wallet_award_quote_scenarios(
     except PointWalletNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return [_funding_scenario_response(row) for row in list_funding_scenarios(session, quote_id)]
+
+
+@app.get("/wallet/award-watches", response_model=list[AwardWatchResponse])
+def get_wallet_award_watches(session: Session = Depends(get_session)) -> list[dict[str, Any]]:
+    return [_award_watch_response(row) for row in list_award_watches(session)]
+
+
+@app.post("/wallet/award-watches", response_model=AwardWatchResponse)
+def post_wallet_award_watch(
+    request: AwardWatchRequest,
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    try:
+        row = create_award_watch(
+            session,
+            origin=request.origin,
+            destination=request.destination,
+            cabin=request.cabin,
+            start_date=request.start_date,
+            end_date=request.end_date,
+            program_id=request.program_id,
+            active=request.active,
+            note=request.note,
+        )
+    except PointWalletNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PointWalletError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return _award_watch_response(row)
+
+
+@app.patch("/wallet/award-watches/{watch_id}", response_model=AwardWatchResponse)
+def patch_wallet_award_watch(
+    watch_id: int,
+    request: AwardWatchRequest,
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    try:
+        row = update_award_watch(
+            session,
+            watch_id=watch_id,
+            origin=request.origin,
+            destination=request.destination,
+            cabin=request.cabin,
+            start_date=request.start_date,
+            end_date=request.end_date,
+            program_id=request.program_id,
+            active=request.active,
+            note=request.note,
+        )
+    except PointWalletNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PointWalletError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return _award_watch_response(row)
+
+
+@app.delete("/wallet/award-watches/{watch_id}")
+def delete_wallet_award_watch(watch_id: int, session: Session = Depends(get_session)) -> dict[str, str]:
+    try:
+        delete_award_watch(session, watch_id=watch_id)
+    except PointWalletNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"status": "deleted"}
+
+
+@app.post("/wallet/award-watches/{watch_id}/fetch", response_model=AwardSnapshotResponse)
+def post_wallet_award_watch_fetch(
+    watch_id: int,
+    request: AwardWatchFetchRequest,
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    try:
+        result = fetch_award_watch(session, watch_id=watch_id, seen_date=request.seen_date)
+    except SeatsAeroError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return _award_snapshot_response(result.snapshot)
+
+
+@app.get("/wallet/award-snapshots", response_model=list[AwardSnapshotResponse])
+def get_wallet_award_snapshots(
+    watch_id: int | None = None,
+    session: Session = Depends(get_session),
+) -> list[dict[str, Any]]:
+    return [_award_snapshot_response(row) for row in list_award_snapshots(session, watch_id=watch_id)]
+
+
+@app.post("/wallet/award-snapshots/{snapshot_id}/promote", response_model=AwardSnapshotPromoteResponse)
+def post_wallet_award_snapshot_promote(
+    snapshot_id: int,
+    request: AwardSnapshotPromoteRequest,
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    try:
+        quote = promote_snapshot_to_award_quote(session, snapshot_id=snapshot_id, item_index=request.item_index)
+    except PointWalletNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PointWalletError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"award_quote": _award_quote_response(quote)}
+
+
+@app.get("/wallet/expiry-alerts", response_model=list[ExpiryAlertResponse])
+def get_wallet_expiry_alerts(
+    status: str | None = None,
+    session: Session = Depends(get_session),
+) -> list[dict[str, Any]]:
+    return [_expiry_alert_response(row) for row in list_expiry_alerts(session, status=status)]
+
+
+@app.post("/wallet/expiry-alerts/scan", response_model=list[ExpiryAlertResponse])
+def post_wallet_expiry_alert_scan(session: Session = Depends(get_session)) -> list[dict[str, Any]]:
+    return [_expiry_alert_response(row) for row in scan_expiry_alerts(session)]
 
 
 @app.get("/knowledge/documents", response_model=list[KnowledgeDocumentResponse])
@@ -1946,6 +2130,48 @@ def _funding_scenario_response(row) -> dict[str, Any]:
         "points_acquired": str(row.points_acquired),
         "points_consumed": str(row.points_consumed),
         "points_leftover": str(row.points_leftover),
+    }
+
+
+def _award_watch_response(row: AwardWatch) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "origin": row.origin,
+        "destination": row.destination,
+        "cabin": row.cabin,
+        "start_date": row.start_date.isoformat() if row.start_date is not None else None,
+        "end_date": row.end_date.isoformat() if row.end_date is not None else None,
+        "program_id": row.program_id,
+        "active": row.active,
+        "note": row.note,
+        "created_at": row.created_at.isoformat(),
+        "updated_at": row.updated_at.isoformat(),
+    }
+
+
+def _award_snapshot_response(row: AwardSnapshot) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "watch_id": row.watch_id,
+        "seen_date": row.seen_date.isoformat(),
+        "status": row.status,
+        "result_count": row.result_count,
+        "normalized_json": row.normalized_json,
+        "created_at": row.created_at.isoformat(),
+    }
+
+
+def _expiry_alert_response(row: ExpiryAlert) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "account_id": row.account_id,
+        "threshold_days": row.threshold_days,
+        "expires_at": row.expires_at.isoformat(),
+        "checked_on": row.checked_on.isoformat(),
+        "balance": str(row.balance),
+        "status": row.status,
+        "message": row.message,
+        "created_at": row.created_at.isoformat(),
     }
 
 

@@ -4,13 +4,20 @@ import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   AwardQuote,
+  AwardSnapshot,
+  AwardWatch,
   FundingScenario,
   Program,
   createAwardQuote,
+  createAwardWatch,
   evaluateAwardQuote,
+  fetchAwardWatch,
   listAwardQuotes,
+  listAwardSnapshots,
+  listAwardWatches,
   listFundingScenarios,
   listPrograms,
+  promoteAwardSnapshot,
 } from "../../../lib/walletApi";
 import { CURRENCY_OPTIONS, OWNER_LABELS } from "../constants";
 import styles from "../WalletPage.module.css";
@@ -38,6 +45,8 @@ export default function WalletAwardsPage() {
   const [favoriteProgramIds, setFavoriteProgramIds] = useState<number[]>([]);
   const [programs, setPrograms] = useState<Program[]>([]);
   const [quotes, setQuotes] = useState<AwardQuote[]>([]);
+  const [watches, setWatches] = useState<AwardWatch[]>([]);
+  const [snapshots, setSnapshots] = useState<AwardSnapshot[]>([]);
   const [selectedQuoteId, setSelectedQuoteId] = useState("");
   const [scenarios, setScenarios] = useState<FundingScenario[]>([]);
   const [expanded, setExpanded] = useState<number | null>(null);
@@ -73,13 +82,20 @@ export default function WalletAwardsPage() {
 
   async function loadPage() {
     try {
-      const [nextPrograms, nextQuotes] = await Promise.all([listPrograms(), listAwardQuotes()]);
+      const [nextPrograms, nextQuotes, nextWatches, nextSnapshots] = await Promise.all([
+        listPrograms(),
+        listAwardQuotes(),
+        listAwardWatches(),
+        listAwardSnapshots(),
+      ]);
       const storedFavorites = window.localStorage.getItem(FAVORITE_PROGRAM_PREF_KEY);
       const nextFavorites = storedFavorites ? JSON.parse(storedFavorites) as number[] : defaultFavoriteProgramIds(nextPrograms);
       if (!storedFavorites) window.localStorage.setItem(FAVORITE_PROGRAM_PREF_KEY, JSON.stringify(nextFavorites));
       setFavoriteProgramIds(nextFavorites);
       setPrograms(nextPrograms);
       setQuotes(nextQuotes);
+      setWatches(nextWatches);
+      setSnapshots(nextSnapshots);
       if (!prefs.programId && nextFavorites.length > 0) {
         setPrefs((current) => ({ ...current, programId: String(nextFavorites[0]) }));
       }
@@ -131,6 +147,50 @@ export default function WalletAwardsPage() {
     }
   }
 
+  async function createWatch(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    try {
+      await createAwardWatch({
+        origin: field(data, "origin"),
+        destination: field(data, "destination"),
+        cabin: field(data, "cabin"),
+        start_date: field(data, "start_date") || null,
+        end_date: field(data, "end_date") || null,
+        program_id: field(data, "program_id") ? Number(field(data, "program_id")) : null,
+        active: true,
+      });
+      setStatus("已建立 seats.aero 監視路線。");
+      form.reset();
+      await loadPage();
+    } catch (exc) {
+      setError(exc instanceof Error ? exc.message : "建立監視路線失敗。");
+    }
+  }
+
+  async function fetchWatch(watchId: number) {
+    try {
+      await fetchAwardWatch(watchId, today());
+      setStatus("已抓取 seats.aero 快照；同一天重跑不會重複建立。");
+      await loadPage();
+    } catch (exc) {
+      setError(exc instanceof Error ? exc.message : "抓取 seats.aero 失敗，請確認 API key 與路線。");
+    }
+  }
+
+  async function promoteSnapshot(snapshotId: number) {
+    try {
+      const promoted = await promoteAwardSnapshot(snapshotId, 0);
+      setSelectedQuoteId(String(promoted.award_quote.id));
+      setScenarios([]);
+      setStatus("已升格為票券需求；請補上現金票價後重新評估。");
+      await loadPage();
+    } catch (exc) {
+      setError(exc instanceof Error ? exc.message : "升格票券需求失敗。");
+    }
+  }
+
   return (
     <main>
       <div className="shell">
@@ -175,6 +235,57 @@ export default function WalletAwardsPage() {
             <button className="button button-primary" type="submit">幫我比價</button>
           </div>
         </form>
+
+        <section className="panel">
+          <div className={styles.sectionHeader}>
+            <div>
+              <h2>seats.aero 監視</h2>
+              <p className="subtle">使用 Partner API 的 Cached Search；不爬蟲、不訂票，只保存每日快照。</p>
+            </div>
+          </div>
+          <form className={styles.awardLine} onSubmit={createWatch}>
+            <input name="origin" placeholder="出發 TPE" maxLength={3} required />
+            <input name="destination" placeholder="抵達 TYO" maxLength={3} required />
+            <select name="cabin" defaultValue="business">
+              <option value="economy">經濟艙</option>
+              <option value="premium">豪華經濟艙</option>
+              <option value="business">商務艙</option>
+              <option value="first">頭等艙</option>
+            </select>
+            <input name="start_date" type="date" aria-label="開始日期" />
+            <input name="end_date" type="date" aria-label="結束日期" />
+            <select name="program_id" defaultValue="">
+              <option value="">任何計畫</option>
+              {sortedPrograms.map((program) => <option key={program.id} value={program.id}>{programDisplayName(program, favoriteProgramIds)}</option>)}
+            </select>
+            <button className="button button-primary" type="submit">新增監視</button>
+          </form>
+
+          <div className={styles.watchList}>
+            {watches.length === 0 ? <p className="pending-text">目前沒有監視路線。</p> : null}
+            {watches.map((watch) => (
+              <article className={styles.watchItem} key={watch.id}>
+                <strong>{watch.origin} → {watch.destination}</strong>
+                <span>{cabinLabel(watch.cabin)} · {watch.start_date || "未指定"} ~ {watch.end_date || "未指定"}</span>
+                <button className="button" type="button" onClick={() => fetchWatch(watch.id)}>抓取快照</button>
+              </article>
+            ))}
+          </div>
+
+          <h3>快照</h3>
+          <div className={styles.watchList}>
+            {snapshots.length === 0 ? <p className="pending-text">目前沒有快照。</p> : null}
+            {snapshots.map((snapshot) => (
+              <article className={styles.watchItem} key={snapshot.id}>
+                <strong>{snapshot.seen_date}</strong>
+                <span>{snapshot.result_count} 筆可用結果 · {snapshotPreview(snapshot)}</span>
+                <button className="button" type="button" onClick={() => promoteSnapshot(snapshot.id)} disabled={snapshot.result_count === 0}>
+                  升格為票券需求
+                </button>
+              </article>
+            ))}
+          </div>
+        </section>
 
         <section className="panel">
           <div className={styles.sectionHeader}>
@@ -306,6 +417,27 @@ function costPerPoint(value: string | number | null): string {
 
 function formatNumber(value: string | number | null): string {
   return Number(value || 0).toLocaleString("zh-TW", { maximumFractionDigits: 2 });
+}
+
+function cabinLabel(value: string): string {
+  const labels: Record<string, string> = {
+    economy: "經濟艙",
+    premium: "豪華經濟艙",
+    business: "商務艙",
+    first: "頭等艙",
+  };
+  return labels[value] || value;
+}
+
+function snapshotPreview(snapshot: AwardSnapshot): string {
+  try {
+    const rows = JSON.parse(snapshot.normalized_json) as Array<Record<string, unknown>>;
+    const first = rows[0];
+    if (!first) return "沒有可升格的結果";
+    return `${first.origin || ""}→${first.destination || ""} ${first.travel_date || ""} ${formatNumber(String(first.miles_required || 0))} 哩`;
+  } catch {
+    return "快照資料暫時無法顯示";
+  }
 }
 
 function today(): string {

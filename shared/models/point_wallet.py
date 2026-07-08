@@ -163,3 +163,54 @@ class FundingScenario(Base):
     points_leftover: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
 
     award_quote: Mapped[AwardQuote] = relationship()
+
+
+class AwardWatch(Base):
+    __tablename__ = "award_watches"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    origin: Mapped[str] = mapped_column(Text, nullable=False)
+    destination: Mapped[str] = mapped_column(Text, nullable=False)
+    cabin: Mapped[str] = mapped_column(Text, nullable=False)
+    start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    program_id: Mapped[int | None] = mapped_column(ForeignKey("programs.id", ondelete="RESTRICT"), nullable=True)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(nullable=False, default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime] = mapped_column(nullable=False, default=lambda: datetime.now(UTC))
+
+    program: Mapped[PointProgram | None] = relationship()
+
+
+class AwardSnapshot(Base):
+    __tablename__ = "award_snapshots"
+    __table_args__ = (UniqueConstraint("watch_id", "seen_date"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    watch_id: Mapped[int] = mapped_column(ForeignKey("award_watches.id", ondelete="CASCADE"), nullable=False)
+    seen_date: Mapped[date] = mapped_column(Date, nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False)
+    result_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    normalized_json: Mapped[str] = mapped_column(Text, nullable=False)
+    raw_json: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(nullable=False, default=lambda: datetime.now(UTC))
+
+    watch: Mapped[AwardWatch] = relationship()
+
+
+class ExpiryAlert(Base):
+    __tablename__ = "expiry_alerts"
+    __table_args__ = (UniqueConstraint("account_id", "threshold_days", "expires_at", "checked_on"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id", ondelete="CASCADE"), nullable=False)
+    threshold_days: Mapped[int] = mapped_column(Integer, nullable=False)
+    expires_at: Mapped[date] = mapped_column(Date, nullable=False)
+    checked_on: Mapped[date] = mapped_column(Date, nullable=False)
+    balance: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="open")
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(nullable=False, default=lambda: datetime.now(UTC))
+
+    account: Mapped[PointAccount] = relationship()

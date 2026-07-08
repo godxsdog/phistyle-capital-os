@@ -126,6 +126,42 @@ export type FundingScenario = {
   points_leftover: string;
 };
 
+export type AwardWatch = {
+  id: number;
+  origin: string;
+  destination: string;
+  cabin: string;
+  start_date: string | null;
+  end_date: string | null;
+  program_id: number | null;
+  active: boolean;
+  note: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AwardSnapshot = {
+  id: number;
+  watch_id: number;
+  seen_date: string;
+  status: string;
+  result_count: number;
+  normalized_json: string;
+  created_at: string;
+};
+
+export type ExpiryAlert = {
+  id: number;
+  account_id: number;
+  threshold_days: number;
+  expires_at: string;
+  checked_on: string;
+  balance: string;
+  status: string;
+  message: string;
+  created_at: string;
+};
+
 export async function listPrograms(): Promise<Program[]> {
   return requestJson<Program[]>("/wallet/programs");
 }
@@ -272,6 +308,66 @@ export async function evaluateAwardQuote(quoteId: number, evaluationDate?: strin
 
 export async function listFundingScenarios(quoteId: number): Promise<FundingScenario[]> {
   return requestJson<FundingScenario[]>(`/wallet/award-quotes/${quoteId}/scenarios`);
+}
+
+export async function listAwardWatches(): Promise<AwardWatch[]> {
+  return requestJson<AwardWatch[]>("/wallet/award-watches");
+}
+
+export async function createAwardWatch(payload: {
+  origin: string;
+  destination: string;
+  cabin: string;
+  start_date?: string | null;
+  end_date?: string | null;
+  program_id?: number | null;
+  active?: boolean;
+  note?: string | null;
+}): Promise<AwardWatch> {
+  return requestJson<AwardWatch>("/wallet/award-watches", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export async function updateAwardWatch(id: number, payload: {
+  origin: string;
+  destination: string;
+  cabin: string;
+  start_date?: string | null;
+  end_date?: string | null;
+  program_id?: number | null;
+  active?: boolean;
+  note?: string | null;
+}): Promise<AwardWatch> {
+  return requestJson<AwardWatch>(`/wallet/award-watches/${id}`, { method: "PATCH", body: JSON.stringify(payload) });
+}
+
+export async function deleteAwardWatch(id: number): Promise<{ status: string }> {
+  return requestJson<{ status: string }>(`/wallet/award-watches/${id}`, { method: "DELETE" });
+}
+
+export async function fetchAwardWatch(watchId: number, seenDate?: string): Promise<AwardSnapshot> {
+  return requestJson<AwardSnapshot>(`/wallet/award-watches/${watchId}/fetch`, {
+    method: "POST",
+    body: JSON.stringify({ seen_date: seenDate || null }),
+  });
+}
+
+export async function listAwardSnapshots(watchId?: number): Promise<AwardSnapshot[]> {
+  return requestJson<AwardSnapshot[]>(`/wallet/award-snapshots${watchId ? `?watch_id=${watchId}` : ""}`);
+}
+
+export async function promoteAwardSnapshot(snapshotId: number, itemIndex = 0): Promise<{ award_quote: AwardQuote }> {
+  return requestJson<{ award_quote: AwardQuote }>(`/wallet/award-snapshots/${snapshotId}/promote`, {
+    method: "POST",
+    body: JSON.stringify({ item_index: itemIndex }),
+  });
+}
+
+export async function listExpiryAlerts(): Promise<ExpiryAlert[]> {
+  return requestJson<ExpiryAlert[]>("/wallet/expiry-alerts");
+}
+
+export async function scanExpiryAlerts(): Promise<ExpiryAlert[]> {
+  return requestJson<ExpiryAlert[]>("/wallet/expiry-alerts/scan", { method: "POST" });
 }
 
 async function requestJson<T>(path: string, init: RequestInit = {}): Promise<T> {

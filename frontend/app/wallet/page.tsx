@@ -4,6 +4,7 @@ import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   Account,
+  ExpiryAlert,
   Portfolio,
   Program,
   TransferRule,
@@ -14,11 +15,13 @@ import {
   createTransferRule,
   deleteTransferRule,
   getPortfolio,
+  listExpiryAlerts,
   listAccounts,
   listPrograms,
   listTransferRules,
   parseWalletRuleWithAi,
   refreshFxRates,
+  scanExpiryAlerts,
   updateTransferRule,
 } from "../../lib/walletApi";
 import {
@@ -97,6 +100,7 @@ export default function WalletPage() {
   const [portfolioAll, setPortfolioAll] = useState<Portfolio | null>(null);
   const [portfolioKent, setPortfolioKent] = useState<Portfolio | null>(null);
   const [portfolioWife, setPortfolioWife] = useState<Portfolio | null>(null);
+  const [expiryAlerts, setExpiryAlerts] = useState<ExpiryAlert[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
 
@@ -140,13 +144,14 @@ export default function WalletPage() {
 
   async function loadWallet() {
     try {
-      const [nextPrograms, nextAccounts, nextRules, nextPortfolioAll, nextPortfolioKent, nextPortfolioWife] = await Promise.all([
+      const [nextPrograms, nextAccounts, nextRules, nextPortfolioAll, nextPortfolioKent, nextPortfolioWife, nextExpiryAlerts] = await Promise.all([
         listPrograms(),
         listAccounts(),
         listTransferRules(),
         getPortfolio(),
         getPortfolio("kent"),
         getPortfolio("wife"),
+        listExpiryAlerts(),
       ]);
       if (!window.localStorage.getItem(FAVORITE_PROGRAM_PREF_KEY)) {
         setFavoriteProgramIds(defaultFavoriteProgramIds(nextPrograms));
@@ -158,6 +163,7 @@ export default function WalletPage() {
       setPortfolioAll(nextPortfolioAll);
       setPortfolioKent(nextPortfolioKent);
       setPortfolioWife(nextPortfolioWife);
+      setExpiryAlerts(nextExpiryAlerts);
       setError(null);
     } catch {
       setError("資料載入失敗，請稍後再試。");
@@ -248,11 +254,13 @@ export default function WalletPage() {
             kent={portfolioKent}
             wife={portfolioWife}
             favoriteProgramIds={favoriteProgramIds}
+            expiryAlerts={expiryAlerts}
             setFavoriteProgramIds={setFavoriteProgramIds}
             openSource={(program) => {
               setPinnedSources((current) => (current.includes(program.id) ? current : [...current, program.id]));
               updatePrefs({ tab: primaryTabForProgram(program) || "otherSources" });
             }}
+            scanExpiry={() => submit(scanExpiryAlerts, "到期提醒已掃描；提醒只顯示在儀表板。")}
           />
         ) : null}
 
@@ -311,8 +319,10 @@ function OverviewPanel({
   kent,
   wife,
   favoriteProgramIds,
+  expiryAlerts,
   setFavoriteProgramIds,
   openSource,
+  scanExpiry,
 }: {
   programs: Program[];
   sourcePrograms: Program[];
@@ -320,8 +330,10 @@ function OverviewPanel({
   kent: Portfolio | null;
   wife: Portfolio | null;
   favoriteProgramIds: number[];
+  expiryAlerts: ExpiryAlert[];
   setFavoriteProgramIds: (value: number[] | ((current: number[]) => number[])) => void;
   openSource: (program: Program) => void;
+  scanExpiry: () => Promise<void>;
 }) {
   const [showFavorites, setShowFavorites] = useState(false);
   return (
@@ -357,6 +369,31 @@ function OverviewPanel({
         {showFavorites ? (
           <FavoriteSettings programs={programs} favoriteProgramIds={favoriteProgramIds} setFavoriteProgramIds={setFavoriteProgramIds} />
         ) : null}
+      </section>
+
+      <section className="panel">
+        <div className={styles.sectionHeader}>
+          <div>
+            <h2>到期提醒</h2>
+            <p className="subtle">每日掃描 90 / 60 / 30 / 7 天門檻；本階段只在儀表板提醒，不寄信不傳 LINE。</p>
+          </div>
+          <button className="button" type="button" onClick={scanExpiry}>
+            掃描到期
+          </button>
+        </div>
+        {expiryAlerts.length === 0 ? (
+          <p className="pending-text">目前沒有到期提醒。</p>
+        ) : (
+          <div className={styles.alertList}>
+            {expiryAlerts.slice(0, 8).map((alert) => (
+              <article className={styles.alertItem} key={alert.id}>
+                <strong>{alert.threshold_days} 天</strong>
+                <span>{alert.message}</span>
+                <small>餘額 {formatNumber(alert.balance)}，檢查日 {alert.checked_on}</small>
+              </article>
+            ))}
+          </div>
+        )}
       </section>
 
       <section className="panel">

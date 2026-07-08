@@ -239,6 +239,28 @@
   padding-top: 8px;
 }
 
+.alertList,
+.watchList {
+  display: grid;
+  gap: 10px;
+}
+
+.alertItem,
+.watchItem {
+  border: 1px solid var(--line);
+  background: #fff;
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px;
+}
+
+.alertItem small,
+.watchItem small {
+  color: var(--muted);
+}
+
 .checkboxLine {
   flex-direction: row;
 }
@@ -281,7 +303,9 @@
   .accountRow,
   .awardLine,
   .awardHead,
-  .awardRow {
+  .awardRow,
+  .alertItem,
+  .watchItem {
     grid-template-columns: 1fr;
   }
 

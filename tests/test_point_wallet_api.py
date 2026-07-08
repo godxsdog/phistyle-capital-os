@@ -237,3 +237,83 @@ def test_wallet_award_quote_evaluate_endpoint_is_read_only_for_lots():
     assert scenarios[0]["method"] == "transfer_chain"
     assert scenarios[0]["total_cash_cost_twd"] == "7000.00"
     assert scenarios[0]["points_consumed"] == "60000.00"
+
+
+def test_wallet_award_watch_snapshot_promote_and_expiry_routes(monkeypatch):
+    client = make_client()
+    aeroplan = client.post("/wallet/programs", json={"name": "aeroplan", "kind": "airline"}).json()
+    account = client.post("/wallet/accounts", json={"owner": "kent", "program_id": aeroplan["id"]}).json()
+    client.post(
+        "/wallet/ledger",
+        json={
+            "account_id": account["id"],
+            "kind": "earn",
+            "quantity": "12000",
+            "occurred_at": "2026-01-01",
+            "note": "manual expires_at=2026-10-06",
+        },
+    )
+    watch = client.post(
+        "/wallet/award-watches",
+        json={
+            "origin": "tpe",
+            "destination": "tyo",
+            "cabin": "business",
+            "start_date": "2026-11-01",
+            "end_date": "2026-11-07",
+            "program_id": aeroplan["id"],
+        },
+    ).json()
+    updated_watch = client.patch(
+        f"/wallet/award-watches/{watch['id']}",
+        json={
+            "origin": "tpe",
+            "destination": "osa",
+            "cabin": "economy",
+            "start_date": "2026-11-01",
+            "end_date": "2026-11-07",
+            "program_id": aeroplan["id"],
+            "active": True,
+            "note": "updated",
+        },
+    )
+    delete_watch = client.post(
+        "/wallet/award-watches",
+        json={"origin": "tpe", "destination": "sel", "cabin": "business"},
+    ).json()
+    deleted_watch = client.delete(f"/wallet/award-watches/{delete_watch['id']}")
+
+    from shared.models.point_wallet import AwardSnapshot
+    from shared.services.seats_aero_service import SeatsAeroFetchResult
+
+    def fake_fetch(session, *, watch_id, seen_date=None):
+        snapshot = AwardSnapshot(
+            watch_id=watch_id,
+            seen_date=seen_date or date(2026, 7, 8),
+            status="success",
+            result_count=1,
+            normalized_json=(
+                '[{"origin":"TPE","destination":"TYO","travel_date":"2026-11-01",'
+                '"cabin":"business","program_source":"aeroplan","miles_required":"45000"}]'
+            ),
+            raw_json='{"data":[]}',
+        )
+        session.add(snapshot)
+        session.commit()
+        return SeatsAeroFetchResult(snapshot=snapshot, created=True)
+
+    monkeypatch.setattr("backend.app.main.fetch_award_watch", fake_fetch)
+    fetched = client.post(f"/wallet/award-watches/{watch['id']}/fetch", json={"seen_date": "2026-07-08"})
+    promoted = client.post(f"/wallet/award-snapshots/{fetched.json()['id']}/promote", json={"item_index": 0})
+    alerts = client.post("/wallet/expiry-alerts/scan")
+
+    assert updated_watch.status_code == 200
+    assert updated_watch.json()["destination"] == "OSA"
+    assert deleted_watch.status_code == 200
+    assert client.get("/wallet/award-watches").json()[0]["origin"] == "TPE"
+    assert fetched.status_code == 200
+    assert fetched.json()["result_count"] == 1
+    assert promoted.status_code == 200
+    assert promoted.json()["award_quote"]["source"] == "seats_aero"
+    assert promoted.json()["award_quote"]["miles_required"] == "45000"
+    assert alerts.status_code == 200
