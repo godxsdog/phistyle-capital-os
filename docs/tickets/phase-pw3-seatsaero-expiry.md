@@ -1,5 +1,11 @@
 # Ticket: Phase PW-3 — seats.aero Integration + Expiry Agent
 
+VERDICT: ACCEPTED (Fable, 2026-07-08; commit b17a4a4). Migration
+0011_pw3_seats_expiry approved. Live Search correctly avoided (Pro
+commercial restriction, cited). VERIFIED after user deploy + key +
+manual checks. PW program (PW-1/2/3) complete pending user
+verification; trading line (17→19→18) is next.
+
 FABLE-APPROVED: yes (2026-07-06, written at session close).
 PRE-START: fresh-context Sonnet clarity review recommended (user may
 waive; record it). IMPLEMENTATION OWNER: Codex. VERDICT: new Fable
