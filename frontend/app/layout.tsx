@@ -1,13 +1,14 @@
 import type { Metadata, Viewport } from "next";
+import { AppShell } from "../components/AppShell";
 import "./globals.css";
 
 export const metadata: Metadata = {
   title: "PhiStyle OS",
-  description: "Personal operating system scaffold",
+  description: "PhiStyle Capital OS",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
-    statusBarStyle: "default",
+    statusBarStyle: "black-translucent",
     title: "PhiStyle",
   },
   icons: {
@@ -23,7 +24,7 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
-  themeColor: "#0f766e",
+  themeColor: "#0f172a",
 };
 
 export default function RootLayout({
@@ -33,8 +34,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="zh-TW">
-      <body>{children}</body>
+      <body>
+        <AppShell>{children}</AppShell>
+      </body>
     </html>
   );
 }
-
