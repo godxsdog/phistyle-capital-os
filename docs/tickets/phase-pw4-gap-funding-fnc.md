@@ -44,6 +44,11 @@ G2 FNC 免房券資產:
 - v0 不做「FNC+補點住宿比較器」(那是 G3,另一張票);
   本 phase 只讓 FNC 被看見、被提醒、被記錄。
 
+VERDICT: ACCEPTED (Fable, 2026-07-09; commit a0a4cc9). Migration
+0016_pw4_vouchers approved (D1 verbatim incl. noted ALTER exception).
+VERIFIED after deploy + 0016 + user enters 3 real 50K FNCs + one
+gap_fill evaluation.
+
 ## AMENDMENT r1(Fable 2026-07-09,Sonnet review 後裁決)
 
 D1 expiry_alerts 約束:account_id 改 NULL 允許並加 voucher_id
