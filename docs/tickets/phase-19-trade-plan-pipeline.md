@@ -8,6 +8,34 @@ IMPLEMENTATION OWNER: Codex. REVIEW: Sonnet. VERDICT: new Fable
 session. DEPENDS ON: Phases 15 (VERIFIED) + 17 ACCEPTED; 18 desirable
 but not blocking.
 
+PRE-START SONNET REVIEW: COMPLETED 2026-07-09(2 BLOCKER + 2 HIGH,
+全數由下方 AMENDMENT 解決)。Codex may start;AMENDMENT 優先於原文。
+
+## AMENDMENT (Fable, 2026-07-09 — BINDING)
+
+B1(建立流程,原文未定):新端點 POST /capital/trade-plans =
+  單一原子交易:先跑 R1-R3 風控檢查 → 呼叫既有
+  create_capital_decision_request(risk_level:有任何違規="high",
+  全過="medium";question/context 由計畫欄位組字)→ 同交易寫入
+  trade_plans 列(含 risk_check JSON)。失敗全回滾。分析仍走
+  既有 POST /capital/decisions/{id}/run,不重做。禁止在
+  decision_request_service 加 risk_level 修改器(§8 禁改)。
+B2(plan_outcomes 補欄):加 holding_days Integer NULL、
+  planned_vs_actual Text NULL(JSON)、currency Text NOT NULL。
+B3(損益公式與幣別):futures:gross_pnl =(exit−entry)×
+  點值(TX 200/MTX 50/TMF 10 TWD)× 口數 × 方向正負,currency
+  ='TWD';US:(exit−entry)× 股數 × 方向正負,currency='USD'。
+  統計頁「永不混幣別」:TWD 與 USD 分區各自顯示勝率/期望值,
+  不做匯率換算。
+B4(標準補節):§4 CONTRACTS:MTM 掛載點=backend/app/commands/
+  ingest_market_data.py(讀 market_daily_bars close,symbol 命名
+  與 market_data_service TX/MTX/TMF 一致);Phase 14/15 行為不變。
+  §9 MIGRATION EXPECTED:一個 additive(trade_plans/plan_marks/
+  plan_outcomes 三表),id ≤32 字元,報告貼全文。§10:不得觸碰
+  任何既有狀態轉移。§11:MTM 冪等 per (plan, mark_date);
+  重跑管線不重建計畫。§12:MTM 缺 bar 跳過記 log 不炸;
+  LLM 失敗走 Phase 15 既有 fallback。
+
 ## 1-2. WHY / USER VALUE
 
 Converts the existing decision spine into the trading discipline

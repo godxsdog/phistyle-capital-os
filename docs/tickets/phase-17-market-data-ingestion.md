@@ -1,6 +1,12 @@
 # Ticket: Phase 17 — Market Data Ingestion v0 (TAIFEX + US daily bars)
 
 FABLE-APPROVED: yes (2026-07-06).
+VERDICT: ACCEPTED + VERIFIED (Fable, 2026-07-09). Implemented by
+Sonnet (Codex out of tokens; commits 7d817d3 + e80ea47 test fix +
+Dockerfile tools/ fix after a deploy crash — lesson: new top-level
+dirs imported by backend MUST be added to backend/Dockerfile COPY).
+Deployed, migrations 0012/0013 applied, user verified live.
+Current phase → 19.
 PRE-START SONNET REVIEW: COMPLETED 2026-07-08 (fresh-context Sonnet,
 run by Fable). Findings: 1 BLOCKER + 2 HIGH + 2 MEDIUM, all fixed in
 this ticket (runtime correction semantics, ingest_runs/
