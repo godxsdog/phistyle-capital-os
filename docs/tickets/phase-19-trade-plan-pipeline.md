@@ -8,6 +8,12 @@ IMPLEMENTATION OWNER: Codex. REVIEW: Sonnet. VERDICT: new Fable
 session. DEPENDS ON: Phases 15 (VERIFIED) + 17 ACCEPTED; 18 desirable
 but not blocking.
 
+VERDICT: ACCEPTED (Fable, 2026-07-09; commit 0b27129). Migration
+0014_trade_plans approved. STOP re atomicity resolved via option 2
+(commit=True param, rollback-proof test). VERIFIED after user deploy
++ 0014 + live paper plan round-trip. Precedent logged: when a spec
+demands atomicity, always check reused helpers' commit behavior.
+
 PRE-START SONNET REVIEW: COMPLETED 2026-07-09(2 BLOCKER + 2 HIGH,
 全數由下方 AMENDMENT 解決)。Codex may start;AMENDMENT 優先於原文。
 
