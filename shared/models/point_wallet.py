@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Boolean, Date, ForeignKey, Integer, Numeric, Text, UniqueConstraint
+from sqlalchemy import Boolean, CheckConstraint, Date, ForeignKey, Integer, Numeric, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from shared.database.base import Base
@@ -199,12 +199,33 @@ class AwardSnapshot(Base):
     watch: Mapped[AwardWatch] = relationship()
 
 
-class ExpiryAlert(Base):
-    __tablename__ = "expiry_alerts"
-    __table_args__ = (UniqueConstraint("account_id", "threshold_days", "expires_at", "checked_on"),)
+class HotelVoucher(Base):
+    __tablename__ = "hotel_vouchers"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id", ondelete="CASCADE"), nullable=False)
+    owner: Mapped[str] = mapped_column(Text, nullable=False)
+    program_id: Mapped[int] = mapped_column(ForeignKey("programs.id", ondelete="RESTRICT"), nullable=False)
+    face_value_points: Mapped[Decimal] = mapped_column(Numeric(18, 0), nullable=False)
+    expires_at: Mapped[date] = mapped_column(Date, nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="active")
+    acquired_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    used_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(nullable=False, default=lambda: datetime.now(UTC))
+
+    program: Mapped[PointProgram] = relationship()
+
+
+class ExpiryAlert(Base):
+    __tablename__ = "expiry_alerts"
+    __table_args__ = (
+        UniqueConstraint("account_id", "threshold_days", "expires_at", "checked_on"),
+        UniqueConstraint("voucher_id", "threshold_days", "expires_at", "checked_on"),
+        CheckConstraint("(account_id IS NULL) != (voucher_id IS NULL)", name="ck_expiry_alerts_one_subject"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id", ondelete="CASCADE"), nullable=True)
+    voucher_id: Mapped[int | None] = mapped_column(ForeignKey("hotel_vouchers.id", ondelete="CASCADE"), nullable=True)
     threshold_days: Mapped[int] = mapped_column(Integer, nullable=False)
     expires_at: Mapped[date] = mapped_column(Date, nullable=False)
     checked_on: Mapped[date] = mapped_column(Date, nullable=False)
@@ -213,4 +234,5 @@ class ExpiryAlert(Base):
     message: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(nullable=False, default=lambda: datetime.now(UTC))
 
-    account: Mapped[PointAccount] = relationship()
+    account: Mapped[PointAccount | None] = relationship()
+    voucher: Mapped[HotelVoucher | None] = relationship()

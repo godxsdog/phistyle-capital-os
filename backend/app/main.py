@@ -39,7 +39,7 @@ from shared.models.knowledge import (
     StorageBackend,
 )
 from shared.models.human_review import HumanReviewDecision
-from shared.models.point_wallet import AwardSnapshot, AwardWatch, ExpiryAlert, PointProgram, TransferRule
+from shared.models.point_wallet import AwardSnapshot, AwardWatch, ExpiryAlert, HotelVoucher, PointProgram, TransferRule
 from shared.models.triage import TriageRecommendation, TriageResult, TriageRiskLevel
 from shared.services.brain_review_service import (
     create_brain_review,
@@ -99,7 +99,9 @@ from shared.services.backtest_service import (
 from shared.services.point_wallet_service import (
     PointWalletError,
     PointWalletNotFoundError,
+    PointWalletStateError,
     create_account,
+    create_hotel_voucher,
     create_ledger_transaction,
     create_program,
     create_purchase_offer,
@@ -107,10 +109,12 @@ from shared.services.point_wallet_service import (
     get_portfolio_summary,
     list_accounts,
     list_cost_lots,
+    list_hotel_vouchers,
     list_ledger_transactions,
     list_programs,
     list_purchase_offers,
     list_transfer_rules,
+    update_hotel_voucher_status,
 )
 from shared.services.seats_aero_service import (
     SeatsAeroError,
@@ -900,13 +904,43 @@ class AwardSnapshotPromoteResponse(BaseModel):
 
 class ExpiryAlertResponse(BaseModel):
     id: int
-    account_id: int
+    account_id: int | None
+    voucher_id: int | None
     threshold_days: int
     expires_at: str
     checked_on: str
     balance: str
     status: str
     message: str
+    created_at: str
+
+
+class HotelVoucherRequest(BaseModel):
+    owner: str
+    program_id: int
+    face_value_points: Decimal
+    expires_at: date
+    acquired_note: str | None = None
+
+
+class HotelVoucherStatusRequest(BaseModel):
+    status: str
+    used_note: str | None = None
+
+    class Config:
+        extra = "forbid"
+
+
+class HotelVoucherResponse(BaseModel):
+    id: int
+    owner: str
+    program_id: int
+    program_name: str
+    face_value_points: str
+    expires_at: str
+    status: str
+    acquired_note: str | None
+    used_note: str | None
     created_at: str
 
 
@@ -1607,6 +1641,56 @@ def get_wallet_portfolio(
         return _point_wallet_portfolio_response(get_portfolio_summary(session, owner=owner))
     except PointWalletError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.get("/wallet/hotel-vouchers", response_model=list[HotelVoucherResponse])
+def get_wallet_hotel_vouchers(
+    owner: str | None = None,
+    status: str | None = None,
+    session: Session = Depends(get_session),
+) -> list[dict[str, Any]]:
+    try:
+        return [_hotel_voucher_response(row) for row in list_hotel_vouchers(session, owner=owner, status=status)]
+    except PointWalletError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.post("/wallet/hotel-vouchers", response_model=HotelVoucherResponse)
+def post_wallet_hotel_voucher(
+    request: HotelVoucherRequest,
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    try:
+        row = create_hotel_voucher(
+            session,
+            owner=request.owner,
+            program_id=request.program_id,
+            face_value_points=request.face_value_points,
+            expires_at=request.expires_at,
+            acquired_note=request.acquired_note,
+        )
+    except PointWalletNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PointWalletError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return _hotel_voucher_response(row)
+
+
+@app.patch("/wallet/hotel-vouchers/{voucher_id}/status", response_model=HotelVoucherResponse)
+def patch_wallet_hotel_voucher_status(
+    voucher_id: int,
+    request: HotelVoucherStatusRequest,
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    try:
+        row = update_hotel_voucher_status(session, voucher_id=voucher_id, status=request.status, used_note=request.used_note)
+    except PointWalletNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PointWalletStateError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except PointWalletError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return _hotel_voucher_response(row)
 
 
 @app.get("/wallet/award-quotes", response_model=list[AwardQuoteResponse])
@@ -2564,6 +2648,21 @@ def _funding_scenario_response(row) -> dict[str, Any]:
     }
 
 
+def _hotel_voucher_response(row: HotelVoucher) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "owner": row.owner,
+        "program_id": row.program_id,
+        "program_name": row.program.name,
+        "face_value_points": str(row.face_value_points),
+        "expires_at": row.expires_at.isoformat(),
+        "status": row.status,
+        "acquired_note": row.acquired_note,
+        "used_note": row.used_note,
+        "created_at": row.created_at.isoformat(),
+    }
+
+
 def _award_watch_response(row: AwardWatch) -> dict[str, Any]:
     return {
         "id": row.id,
@@ -2596,6 +2695,7 @@ def _expiry_alert_response(row: ExpiryAlert) -> dict[str, Any]:
     return {
         "id": row.id,
         "account_id": row.account_id,
+        "voucher_id": row.voucher_id,
         "threshold_days": row.threshold_days,
         "expires_at": row.expires_at.isoformat(),
         "checked_on": row.checked_on.isoformat(),

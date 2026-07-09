@@ -317,3 +317,35 @@ def test_wallet_award_watch_snapshot_promote_and_expiry_routes(monkeypatch):
     assert promoted.json()["award_quote"]["source"] == "seats_aero"
     assert promoted.json()["award_quote"]["miles_required"] == "45000"
     assert alerts.status_code == 200
+
+
+def test_wallet_hotel_voucher_routes_and_status_guard():
+    client = make_client()
+    marriott = client.post("/wallet/programs", json={"name": "Marriott Bonvoy", "kind": "hotel"}).json()
+
+    created = client.post(
+        "/wallet/hotel-vouchers",
+        json={
+            "owner": "kent",
+            "program_id": marriott["id"],
+            "face_value_points": "50000",
+            "expires_at": "2026-08-28",
+            "acquired_note": "synthetic FNC",
+        },
+    )
+    listed = client.get("/wallet/hotel-vouchers")
+    used = client.patch(
+        f"/wallet/hotel-vouchers/{created.json()['id']}/status",
+        json={"status": "used", "used_note": "已訂房"},
+    )
+    rejected = client.patch(
+        f"/wallet/hotel-vouchers/{created.json()['id']}/status",
+        json={"status": "expired", "used_note": "try again"},
+    )
+
+    assert created.status_code == 200
+    assert created.json()["program_name"] == "Marriott Bonvoy"
+    assert listed.json()[0]["face_value_points"] == "50000"
+    assert used.status_code == 200
+    assert used.json()["status"] == "used"
+    assert rejected.status_code == 409

@@ -214,6 +214,7 @@ def evaluate_award_quote_data(
     tax_twd: tuple[Decimal, tuple[str, ...]],
     program_names: dict[int, str] | None = None,
     owners: tuple[str, ...] = ("kent", "wife"),
+    include_gap_fill: bool = True,
 ) -> list[EngineScenario]:
     program_names = program_names or {}
     taxes_twd, tax_warnings = tax_twd
@@ -318,6 +319,20 @@ def evaluate_award_quote_data(
                 )
             )
 
+    if include_gap_fill:
+        scenarios.extend(
+            _gap_fill_scenarios(
+                quote=quote,
+                accounts=accounts,
+                rules=rules,
+                offers=offers,
+                taxes_twd=taxes_twd,
+                tax_warnings=tax_warnings,
+                cash_price_twd=quote.cash_price_twd,
+                program_names=program_names,
+            )
+        )
+
     if quote.cash_price_twd is not None:
         scenarios.append(
             _scenario(
@@ -338,6 +353,84 @@ def evaluate_award_quote_data(
         raise PointWalletError("Award cost evaluation produced more than 200 scenarios")
     ranked = sorted(scenarios, key=lambda item: (item.total_cash_cost_twd, item.method, item.owner))
     return [EngineScenario(**{**scenario.__dict__, "rank": index + 1}) for index, scenario in enumerate(ranked)]
+
+
+def _gap_fill_scenarios(
+    *,
+    quote: EngineQuote,
+    accounts: tuple[EngineAccount, ...],
+    rules: tuple[EngineRule, ...],
+    offers: tuple[EngineOffer, ...],
+    taxes_twd: Decimal,
+    tax_warnings: tuple[str, ...],
+    cash_price_twd: Decimal | None,
+    program_names: dict[int, str],
+) -> list[EngineScenario]:
+    rows: list[EngineScenario] = []
+    for account in [item for item in accounts if item.program_id == quote.program_id and Decimal("0") < item.balance < quote.miles_required]:
+        existing_cost, existing_lots, partial = simulate_fifo(account.lots, account.balance)
+        gap = quote.miles_required - account.balance
+        fill_accounts = tuple(
+            EngineAccount(
+                id=item.id,
+                owner=item.owner,
+                program_id=item.program_id,
+                balance=Decimal("0") if item.id == account.id else item.balance,
+                lots=() if item.id == account.id else item.lots,
+            )
+            for item in accounts
+            if item.owner == account.owner
+        )
+        fill_scenarios = evaluate_award_quote_data(
+            quote=EngineQuote(
+                id=quote.id,
+                program_id=quote.program_id,
+                miles_required=gap,
+                taxes_amount=None,
+                taxes_currency=None,
+                cash_price_twd=None,
+            ),
+            accounts=fill_accounts,
+            rules=rules,
+            offers=offers,
+            tax_twd=(Decimal("0"), ()),
+            program_names=program_names,
+            owners=(account.owner,),
+            include_gap_fill=False,
+        )
+        for fill in [item for item in fill_scenarios if item.method != "cash"]:
+            warnings = list(tax_warnings)
+            if partial:
+                warnings.append("部分無成本基礎")
+            warnings.extend(fill.warnings)
+            points_cost = _money(existing_cost + fill.total_cash_cost_twd)
+            rows.append(
+                _scenario(
+                    owner=account.owner,
+                    method="gap_fill",
+                    path={
+                        "existing": {
+                            "program_id": quote.program_id,
+                            "program_name": program_names.get(quote.program_id, str(quote.program_id)),
+                            "points": _points(account.balance),
+                            "lots_consumed": existing_lots,
+                        },
+                        "fill": {
+                            "gap_points": _points(gap),
+                            "method": fill.method,
+                            "path": fill.path,
+                        },
+                    },
+                    points_cost_twd=points_cost,
+                    taxes_twd=taxes_twd,
+                    cash_price_twd=cash_price_twd,
+                    warnings=tuple(warnings),
+                    points_acquired=quote.miles_required,
+                    points_consumed=account.balance + fill.points_consumed,
+                    points_leftover=fill.points_leftover,
+                )
+            )
+    return rows
 
 
 def simulate_fifo(lots: tuple[EngineLot, ...], required: Decimal) -> tuple[Decimal, list[dict[str, str | int]], bool]:

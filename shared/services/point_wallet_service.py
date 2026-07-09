@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from shared.models.point_wallet import (
     CostLot,
+    HotelVoucher,
     LedgerTransaction,
     PointAccount,
     PointProgram,
@@ -22,6 +23,7 @@ from shared.services.exchange_rate_service import get_twd_per_unit
 VALID_OWNERS = {"kent", "wife"}
 VALID_PROGRAM_KINDS = {"airline", "hotel", "bank", "other"}
 VALID_TRANSACTION_KINDS = {"earn", "buy", "transfer_in", "transfer_out", "redeem", "expire", "adjustment"}
+VALID_VOUCHER_STATUSES = {"active", "used", "expired"}
 
 
 class PointWalletError(ValueError):
@@ -29,6 +31,10 @@ class PointWalletError(ValueError):
 
 
 class PointWalletNotFoundError(PointWalletError):
+    pass
+
+
+class PointWalletStateError(PointWalletError):
     pass
 
 
@@ -290,6 +296,62 @@ def list_purchase_offers(session: Session) -> list[PurchaseOffer]:
     return list(session.scalars(select(PurchaseOffer).order_by(PurchaseOffer.program_id, PurchaseOffer.start_date.desc(), PurchaseOffer.id)))
 
 
+def list_hotel_vouchers(session: Session, *, owner: str | None = None, status: str | None = None) -> list[HotelVoucher]:
+    statement = select(HotelVoucher).order_by(HotelVoucher.expires_at, HotelVoucher.id)
+    if owner is not None:
+        statement = statement.where(HotelVoucher.owner == _normalize_owner(owner))
+    if status is not None:
+        statement = statement.where(HotelVoucher.status == _normalize_voucher_status(status))
+    return list(session.scalars(statement))
+
+
+def create_hotel_voucher(
+    session: Session,
+    *,
+    owner: str,
+    program_id: int,
+    face_value_points: Decimal,
+    expires_at: date,
+    acquired_note: str | None = None,
+) -> HotelVoucher:
+    owner = _normalize_owner(owner)
+    _require_program(session, program_id)
+    if face_value_points <= 0:
+        raise PointWalletError("face_value_points must be positive")
+    row = HotelVoucher(
+        owner=owner,
+        program_id=program_id,
+        face_value_points=face_value_points,
+        expires_at=expires_at,
+        status="active",
+        acquired_note=acquired_note,
+    )
+    session.add(row)
+    _commit(session)
+    return row
+
+
+def update_hotel_voucher_status(
+    session: Session,
+    *,
+    voucher_id: int,
+    status: str,
+    used_note: str | None = None,
+) -> HotelVoucher:
+    row = session.get(HotelVoucher, voucher_id)
+    if row is None:
+        raise PointWalletNotFoundError(f"Unknown voucher_id: {voucher_id}")
+    next_status = _normalize_voucher_status(status)
+    if row.status != "active":
+        raise PointWalletStateError("hotel voucher is already final")
+    if next_status == "active":
+        raise PointWalletStateError("hotel voucher status cannot transition to active")
+    row.status = next_status
+    row.used_note = used_note
+    _commit(session)
+    return row
+
+
 def get_portfolio_summary(session: Session, *, owner: str | None = None, today: date | None = None) -> dict[str, object]:
     today = today or date.today()
     accounts = list_accounts(session)
@@ -378,6 +440,13 @@ def _normalize_owner(owner: str) -> str:
         normalized = "kent"
     if normalized not in VALID_OWNERS:
         raise PointWalletError("owner must be kent or wife")
+    return normalized
+
+
+def _normalize_voucher_status(status: str) -> str:
+    normalized = status.strip().lower()
+    if normalized not in VALID_VOUCHER_STATUSES:
+        raise PointWalletError("status must be active, used, or expired")
     return normalized
 
 

@@ -14,7 +14,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from shared.models.point_wallet import AwardQuote, AwardSnapshot, AwardWatch, ExpiryAlert, PointAccount, PointProgram
+from shared.models.point_wallet import AwardQuote, AwardSnapshot, AwardWatch, ExpiryAlert, HotelVoucher, PointAccount, PointProgram
 from shared.services.point_wallet_service import PointWalletError, PointWalletNotFoundError, get_portfolio_summary
 
 
@@ -290,12 +290,44 @@ def scan_expiry_alerts(session: Session, *, today: date | None = None) -> list[E
             continue
         row = ExpiryAlert(
             account_id=account_summary.account_id,
+            voucher_id=None,
             threshold_days=days_left,
             expires_at=expires_at,
             checked_on=today,
             balance=account_summary.balance,
             status="open",
             message=expiry_message(account_summary.program_name, days_left, expires_at),
+            created_at=datetime.now(UTC),
+        )
+        session.add(row)
+        created.append(row)
+    vouchers = list(session.scalars(select(HotelVoucher).where(HotelVoucher.status == "active").order_by(HotelVoucher.expires_at, HotelVoucher.id)))
+    for voucher in vouchers:
+        days_left = (voucher.expires_at - today).days
+        if days_left < 0:
+            voucher.status = "expired"
+            continue
+        if days_left not in EXPIRY_THRESHOLDS:
+            continue
+        existing = session.scalar(
+            select(ExpiryAlert).where(
+                ExpiryAlert.voucher_id == voucher.id,
+                ExpiryAlert.threshold_days == days_left,
+                ExpiryAlert.expires_at == voucher.expires_at,
+                ExpiryAlert.checked_on == today,
+            )
+        )
+        if existing is not None:
+            continue
+        row = ExpiryAlert(
+            account_id=None,
+            voucher_id=voucher.id,
+            threshold_days=days_left,
+            expires_at=voucher.expires_at,
+            checked_on=today,
+            balance=voucher.face_value_points,
+            status="open",
+            message=voucher_expiry_message(voucher, days_left),
             created_at=datetime.now(UTC),
         )
         session.add(row)
@@ -385,6 +417,11 @@ def expiry_message(program_name: str, days_left: int, expires_at: date) -> str:
         7: "最後提醒：今天就決定使用、保點或接受過期。",
     }
     return f"{program_name} 點數將於 {expires_at.isoformat()} 到期，剩 {days_left} 天。建議：{actions[days_left]}"
+
+
+def voucher_expiry_message(voucher: HotelVoucher, days_left: int) -> str:
+    face_k = (voucher.face_value_points / Decimal("1000")).to_integral_value()
+    return f"🏨 {voucher.owner} 的 {voucher.program.name} 免房券({face_k}K)將於 {days_left} 天後到期"
 
 
 def _program_for_snapshot_item(session: Session, watch: AwardWatch, item: dict[str, Any]) -> PointProgram:

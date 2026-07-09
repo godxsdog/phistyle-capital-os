@@ -5,16 +5,19 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   Account,
   ExpiryAlert,
+  HotelVoucher,
   Portfolio,
   Program,
   TransferRule,
   WalletAiParsedRule,
   createAccount,
+  createHotelVoucher,
   createLedger,
   createProgram,
   createTransferRule,
   deleteTransferRule,
   getPortfolio,
+  listHotelVouchers,
   listExpiryAlerts,
   listAccounts,
   listPrograms,
@@ -22,6 +25,7 @@ import {
   parseWalletRuleWithAi,
   refreshFxRates,
   scanExpiryAlerts,
+  updateHotelVoucherStatus,
   updateTransferRule,
 } from "../../lib/walletApi";
 import {
@@ -101,6 +105,7 @@ export default function WalletPage() {
   const [portfolioKent, setPortfolioKent] = useState<Portfolio | null>(null);
   const [portfolioWife, setPortfolioWife] = useState<Portfolio | null>(null);
   const [expiryAlerts, setExpiryAlerts] = useState<ExpiryAlert[]>([]);
+  const [hotelVouchers, setHotelVouchers] = useState<HotelVoucher[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
 
@@ -144,7 +149,7 @@ export default function WalletPage() {
 
   async function loadWallet() {
     try {
-      const [nextPrograms, nextAccounts, nextRules, nextPortfolioAll, nextPortfolioKent, nextPortfolioWife, nextExpiryAlerts] = await Promise.all([
+      const [nextPrograms, nextAccounts, nextRules, nextPortfolioAll, nextPortfolioKent, nextPortfolioWife, nextExpiryAlerts, nextHotelVouchers] = await Promise.all([
         listPrograms(),
         listAccounts(),
         listTransferRules(),
@@ -152,6 +157,7 @@ export default function WalletPage() {
         getPortfolio("kent"),
         getPortfolio("wife"),
         listExpiryAlerts(),
+        listHotelVouchers(),
       ]);
       if (!window.localStorage.getItem(FAVORITE_PROGRAM_PREF_KEY)) {
         setFavoriteProgramIds(defaultFavoriteProgramIds(nextPrograms));
@@ -164,6 +170,7 @@ export default function WalletPage() {
       setPortfolioKent(nextPortfolioKent);
       setPortfolioWife(nextPortfolioWife);
       setExpiryAlerts(nextExpiryAlerts);
+      setHotelVouchers(nextHotelVouchers);
       setError(null);
     } catch {
       setError("資料載入失敗，請稍後再試。");
@@ -307,6 +314,7 @@ export default function WalletPage() {
             sortedPrograms={sortedPrograms}
             favoriteProgramIds={favoriteProgramIds}
             accounts={accounts}
+            hotelVouchers={hotelVouchers}
             portfolio={portfolioAll}
             prefs={prefs}
             updatePrefs={updatePrefs}
@@ -881,6 +889,7 @@ function MyPointsPanel({
   sortedPrograms,
   favoriteProgramIds,
   accounts,
+  hotelVouchers,
   portfolio,
   prefs,
   updatePrefs,
@@ -889,6 +898,7 @@ function MyPointsPanel({
   sortedPrograms: Program[];
   favoriteProgramIds: number[];
   accounts: Account[];
+  hotelVouchers: HotelVoucher[];
   portfolio: Portfolio | null;
   prefs: Preferences;
   updatePrefs: (next: Partial<Preferences>) => void;
@@ -929,7 +939,108 @@ function MyPointsPanel({
           submit={submit}
         />
       </div>
+
+      <section className="panel">
+        <h2>免房券</h2>
+        <p className="subtle">記錄飯店 FNC 免房券；90 天內到期會在儀表板以紅色提示。</p>
+        <div className={styles.accountList}>
+          {hotelVouchers.map((voucher) => (
+            <HotelVoucherRow key={voucher.id} voucher={voucher} submit={submit} />
+          ))}
+          {hotelVouchers.length === 0 ? <p className="pending-text">目前沒有免房券。</p> : null}
+        </div>
+      </section>
+
+      <HotelVoucherForm
+        programs={sortedPrograms.filter((program) => program.kind === "hotel")}
+        favoriteProgramIds={favoriteProgramIds}
+        selectedProgramId={prefs.programId}
+        updatePrefs={updatePrefs}
+        submit={submit}
+      />
     </>
+  );
+}
+
+function HotelVoucherRow({
+  voucher,
+  submit,
+}: {
+  voucher: HotelVoucher;
+  submit: (action: () => Promise<unknown>, message: string) => Promise<void>;
+}) {
+  const daysLeft = daysUntil(voucher.expires_at);
+  const isUrgent = voucher.status === "active" && daysLeft !== null && daysLeft <= 90;
+  return (
+    <article className={`${styles.accountRow} ${isUrgent ? styles.urgentVoucher : ""}`}>
+      <div>
+        <strong>{OWNER_LABELS[voucher.owner] || voucher.owner} · {voucher.program_name} 免房券</strong>
+        <p className="subtle">
+          面額 {formatNumber(voucher.face_value_points)} 點，到期 {voucher.expires_at}
+          {daysLeft !== null ? `，剩 ${daysLeft} 天` : ""}，狀態 {voucherStatusLabel(voucher.status)}
+        </p>
+        {voucher.acquired_note ? <p className="subtle">{voucher.acquired_note}</p> : null}
+      </div>
+      {voucher.status === "active" ? (
+        <button
+          className="button"
+          type="button"
+          onClick={() => submit(() => updateHotelVoucherStatus(voucher.id, { status: "used", used_note: "使用者於錢包頁標記已使用" }), "免房券已標記使用。")}
+        >
+          標記已使用
+        </button>
+      ) : null}
+    </article>
+  );
+}
+
+function HotelVoucherForm({
+  programs,
+  favoriteProgramIds,
+  selectedProgramId,
+  updatePrefs,
+  submit,
+}: {
+  programs: Program[];
+  favoriteProgramIds: number[];
+  selectedProgramId: string;
+  updatePrefs: (next: Partial<Preferences>) => void;
+  submit: (action: () => Promise<unknown>, message: string) => Promise<void>;
+}) {
+  return (
+    <FormPanel title="新增免房券" description="使用既有飯店計畫下拉；缺少飯店計畫時，請先用新增計畫建立。">
+      {(form) => (
+        <>
+          <select name="owner" defaultValue="kent">
+            <option value="kent">凱章</option>
+            <option value="wife">老婆</option>
+          </select>
+          <ProgramSelect
+            programs={programs}
+            favoriteProgramIds={favoriteProgramIds}
+            value={selectedProgramId}
+            onChange={(value) => updatePrefs({ programId: value })}
+          />
+          <input name="face_value_points" placeholder="面額，例如 50000" defaultValue="50000" required />
+          <input name="expires_at" type="date" required />
+          <input name="acquired_note" placeholder="取得備註，例如 信用卡年度免房券" />
+          <button
+            className="button button-primary"
+            type="button"
+            disabled={programs.length === 0}
+            onClick={() => submit(() => createHotelVoucher({
+              owner: field(form, "owner"),
+              program_id: Number(field(form, "program_id")),
+              face_value_points: field(form, "face_value_points"),
+              expires_at: field(form, "expires_at"),
+              acquired_note: field(form, "acquired_note") || null,
+            }), "免房券已新增。")}
+          >
+            新增免房券
+          </button>
+        </>
+      )}
+    </FormPanel>
   );
 }
 
@@ -1266,6 +1377,21 @@ function formatMoney(value: unknown): string {
 function costPerPoint(value: unknown): string {
   if (value === null || value === undefined || value === "") return "未設定";
   return `NT$${Number(value).toLocaleString("zh-TW", { minimumFractionDigits: 3, maximumFractionDigits: 3 })}/點`;
+}
+
+function daysUntil(value: string): number | null {
+  if (!value) return null;
+  const todayDate = new Date(today());
+  const target = new Date(value);
+  if (Number.isNaN(target.getTime())) return null;
+  return Math.ceil((target.getTime() - todayDate.getTime()) / 86400000);
+}
+
+function voucherStatusLabel(status: string): string {
+  if (status === "active") return "可用";
+  if (status === "used") return "已使用";
+  if (status === "expired") return "已過期";
+  return status;
 }
 
 function formatNumber(value: unknown): string {

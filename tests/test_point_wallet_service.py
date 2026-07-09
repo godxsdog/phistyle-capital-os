@@ -17,12 +17,16 @@ from shared.services.exchange_rate_service import get_twd_per_unit, refresh_fx_r
 from shared.services.point_wallet_legacy_import import import_legacy_point_wallet_data
 from shared.services.point_wallet_service import (
     create_ledger_transaction,
+    create_hotel_voucher,
     get_portfolio_summary,
     list_accounts,
     list_cost_lots,
+    list_hotel_vouchers,
     list_ledger_transactions,
     list_purchase_offers,
     list_transfer_rules,
+    PointWalletStateError,
+    update_hotel_voucher_status,
 )
 
 
@@ -168,3 +172,30 @@ def test_fx_refresh_falls_back_when_api_fails(monkeypatch):
 
     assert result["source"] == "fallback"
     assert get_twd_per_unit(session, "USD", as_of=date(2026, 7, 6)) == Decimal("31.500000")
+
+
+def test_hotel_voucher_crud_and_status_is_one_way():
+    session = make_session()
+    marriott = import_program(session, name="Marriott Bonvoy", kind="hotel")
+
+    voucher = create_hotel_voucher(
+        session,
+        owner="kent",
+        program_id=marriott.id,
+        face_value_points=Decimal("50000"),
+        expires_at=date(2026, 8, 28),
+        acquired_note="synthetic FNC",
+    )
+    used = update_hotel_voucher_status(session, voucher_id=voucher.id, status="used", used_note="已訂房")
+
+    assert list_hotel_vouchers(session)[0].face_value_points == Decimal("50000")
+    assert used.status == "used"
+    assert used.used_note == "已訂房"
+    with pytest.raises(PointWalletStateError):
+        update_hotel_voucher_status(session, voucher_id=voucher.id, status="expired")
+
+
+def import_program(session, *, name: str, kind: str):
+    from shared.services.point_wallet_service import create_program
+
+    return create_program(session, name=name, kind=kind)

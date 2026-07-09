@@ -12,7 +12,7 @@ from sqlalchemy.pool import StaticPool
 
 from shared.database.base import Base
 from shared.models import point_wallet  # noqa: F401
-from shared.services.point_wallet_service import create_account, create_ledger_transaction, create_program
+from shared.services.point_wallet_service import create_account, create_hotel_voucher, create_ledger_transaction, create_program, list_hotel_vouchers
 from shared.services.seats_aero_service import (
     create_award_watch,
     fetch_award_watch,
@@ -117,3 +117,34 @@ def test_expiry_scan_creates_threshold_alerts_idempotently():
     assert alerts[0].threshold_days == 90
     assert alerts[0].balance == Decimal("12000.00")
     assert "Qatar Avios" in alerts[0].message
+
+
+def test_expiry_scan_creates_voucher_alerts_and_expires_past_vouchers():
+    session = make_session()
+    program = create_program(session, name="Marriott Bonvoy", kind="hotel")
+    create_hotel_voucher(
+        session,
+        owner="kent",
+        program_id=program.id,
+        face_value_points=Decimal("50000"),
+        expires_at=date(2026, 8, 28),
+    )
+    create_hotel_voucher(
+        session,
+        owner="wife",
+        program_id=program.id,
+        face_value_points=Decimal("50000"),
+        expires_at=date(2026, 7, 1),
+    )
+
+    first = scan_expiry_alerts(session, today=date(2026, 7, 29))
+    second = scan_expiry_alerts(session, today=date(2026, 7, 29))
+
+    alerts = list_expiry_alerts(session)
+    vouchers = list_hotel_vouchers(session)
+    assert len(first) == 1
+    assert second == []
+    assert alerts[0].voucher_id is not None
+    assert alerts[0].account_id is None
+    assert "🏨 kent 的 Marriott Bonvoy 免房券(50K)將於 30 天後到期" == alerts[0].message
+    assert {voucher.owner: voucher.status for voucher in vouchers} == {"kent": "active", "wife": "expired"}

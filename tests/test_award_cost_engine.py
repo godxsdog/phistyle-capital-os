@@ -22,11 +22,13 @@ from shared.services.award_cost_engine import (
 )
 from shared.services.point_wallet_service import (
     create_account,
+    create_hotel_voucher,
     create_ledger_transaction,
     create_program,
     create_purchase_offer,
     create_transfer_rule,
     list_cost_lots,
+    list_hotel_vouchers,
 )
 
 
@@ -136,6 +138,13 @@ def lot_snapshot(session):
     ]
 
 
+def voucher_snapshot(session):
+    return [
+        (voucher.id, voucher.owner, voucher.program_id, voucher.face_value_points, voucher.expires_at, voucher.status, voucher.used_note)
+        for voucher in list_hotel_vouchers(session)
+    ]
+
+
 def test_hand_computed_award_scenarios_and_read_only_lots():
     session, quote_id = seed_hand_computed_wallet()
     before = lot_snapshot(session)
@@ -242,6 +251,99 @@ def test_threshold_block_marriott_rule_requires_exactly_75000_points():
     )
 
     assert required_send(rule, Decimal("30000")) == Decimal("75000.00")
+
+
+def test_gap_fill_uses_existing_18911_and_fills_6089_at_35_to_1_read_only():
+    session = make_session()
+    wanlitong = create_program(session, name="平安萬里通", kind="bank")
+    qatar = create_program(session, name="Qatar Avios", kind="airline")
+    source = create_account(session, owner="kent", program_id=wanlitong.id)
+    target = create_account(session, owner="kent", program_id=qatar.id)
+    create_ledger_transaction(
+        session,
+        account_id=source.id,
+        kind="buy",
+        quantity=Decimal("300000"),
+        occurred_at=date(2026, 7, 1),
+        cost_total=Decimal("3000"),
+        cost_currency="TWD",
+        create_lot=True,
+    )
+    create_ledger_transaction(
+        session,
+        account_id=target.id,
+        kind="earn",
+        quantity=Decimal("18911"),
+        occurred_at=date(2026, 7, 1),
+        note="legacy balance without cost basis",
+    )
+    create_transfer_rule(
+        session,
+        from_program_id=wanlitong.id,
+        to_program_id=qatar.id,
+        ratio_from=Decimal("35"),
+        ratio_to=Decimal("1"),
+        valid_from=date(2026, 1, 1),
+    )
+    create_hotel_voucher(
+        session,
+        owner="kent",
+        program_id=qatar.id,
+        face_value_points=Decimal("50000"),
+        expires_at=date(2026, 8, 28),
+    )
+    quote = create_award_quote(
+        session,
+        origin="TPE",
+        destination="DOH",
+        program_id=qatar.id,
+        miles_required=Decimal("25000"),
+        cash_price_twd=Decimal("100000"),
+    )
+    before_lots = lot_snapshot(session)
+    before_vouchers = voucher_snapshot(session)
+
+    scenarios = evaluate_award_quote(session, quote.id, evaluation_date=date(2026, 7, 7))
+
+    assert lot_snapshot(session) == before_lots
+    assert voucher_snapshot(session) == before_vouchers
+    gap = next(row for row in scenarios if row.method == "gap_fill")
+    path = json.loads(gap.path_json)
+    assert path["existing"]["points"] == "18911.00"
+    assert path["fill"]["gap_points"] == "6089.00"
+    assert path["fill"]["path"]["hops"][0]["sent"] == "213115.00"
+    assert path["fill"]["path"]["hops"][0]["received"] == "6089.00"
+    assert gap.true_cost_twd == Decimal("2131.15")
+    assert gap.points_acquired == Decimal("25000.00")
+    assert gap.points_consumed == Decimal("232026.00")
+    assert "部分無成本基礎" in (gap.warnings or "")
+
+
+def test_gap_fill_is_not_emitted_for_zero_or_sufficient_existing_balance():
+    session = make_session()
+    wanlitong = create_program(session, name="平安萬里通", kind="bank")
+    qatar = create_program(session, name="Qatar Avios", kind="airline")
+    source = create_account(session, owner="kent", program_id=wanlitong.id)
+    target = create_account(session, owner="kent", program_id=qatar.id)
+    create_ledger_transaction(
+        session,
+        account_id=source.id,
+        kind="buy",
+        quantity=Decimal("300000"),
+        occurred_at=date(2026, 7, 1),
+        cost_total=Decimal("3000"),
+        cost_currency="TWD",
+        create_lot=True,
+    )
+    create_transfer_rule(session, from_program_id=wanlitong.id, to_program_id=qatar.id, ratio_from=Decimal("35"), ratio_to=Decimal("1"), valid_from=date(2026, 1, 1))
+    zero_quote = create_award_quote(session, program_id=qatar.id, miles_required=Decimal("25000"))
+    zero_scenarios = evaluate_award_quote(session, zero_quote.id, evaluation_date=date(2026, 7, 7))
+    create_ledger_transaction(session, account_id=target.id, kind="earn", quantity=Decimal("26000"), occurred_at=date(2026, 7, 2))
+    sufficient_quote = create_award_quote(session, program_id=qatar.id, miles_required=Decimal("25000"))
+    sufficient_scenarios = evaluate_award_quote(session, sufficient_quote.id, evaluation_date=date(2026, 7, 7))
+
+    assert "gap_fill" not in {row.method for row in zero_scenarios}
+    assert "gap_fill" not in {row.method for row in sufficient_scenarios}
 
 
 def test_infeasible_balance_and_expired_rules_are_excluded():

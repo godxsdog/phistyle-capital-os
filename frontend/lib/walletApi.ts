@@ -152,13 +152,27 @@ export type AwardSnapshot = {
 
 export type ExpiryAlert = {
   id: number;
-  account_id: number;
+  account_id: number | null;
+  voucher_id: number | null;
   threshold_days: number;
   expires_at: string;
   checked_on: string;
   balance: string;
   status: string;
   message: string;
+  created_at: string;
+};
+
+export type HotelVoucher = {
+  id: number;
+  owner: "kent" | "wife" | string;
+  program_id: number;
+  program_name: string;
+  face_value_points: string;
+  expires_at: string;
+  status: "active" | "used" | "expired" | string;
+  acquired_note: string | null;
+  used_note: string | null;
   created_at: string;
 };
 
@@ -273,6 +287,27 @@ export async function createPurchaseOffer(payload: {
 
 export async function getPortfolio(owner?: string): Promise<Portfolio> {
   return requestJson<Portfolio>(`/wallet/portfolio${owner ? `?owner=${encodeURIComponent(owner)}` : ""}`);
+}
+
+export async function listHotelVouchers(): Promise<HotelVoucher[]> {
+  return requestJson<HotelVoucher[]>("/wallet/hotel-vouchers");
+}
+
+export async function createHotelVoucher(payload: {
+  owner: string;
+  program_id: number;
+  face_value_points: string;
+  expires_at: string;
+  acquired_note?: string | null;
+}): Promise<HotelVoucher> {
+  return requestJson<HotelVoucher>("/wallet/hotel-vouchers", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export async function updateHotelVoucherStatus(id: number, payload: {
+  status: "used" | "expired";
+  used_note?: string | null;
+}): Promise<HotelVoucher> {
+  return requestJson<HotelVoucher>(`/wallet/hotel-vouchers/${id}/status`, { method: "PATCH", body: JSON.stringify(payload) });
 }
 
 export async function refreshFxRates(): Promise<{ source: string; created: string }> {

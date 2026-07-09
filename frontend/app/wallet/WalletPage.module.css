@@ -265,6 +265,11 @@
   flex-direction: row;
 }
 
+.urgentVoucher {
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger), white 92%);
+}
+
 .tableWrap {
   width: 100%;
   overflow-x: auto;
