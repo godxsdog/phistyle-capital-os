@@ -89,6 +89,10 @@ docs/strategy/strategic-stop-conditions.md.
 
 ## Strategy files
 
+- docs/strategy/fable-judgment-handover.md — READ FIRST in any
+  verdict/strategy session: harness failure modes, judgment rubrics
+  with precedents, maintenance protocol, letter to future sessions.
+
 - docs/strategy/system-strategy.md — identity, direction, execution
   boundary, what not to build.
 - docs/strategy/current-roadmap.md — approved Phases 14–20, frozen and
