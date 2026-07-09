@@ -44,6 +44,10 @@ v0 是「誠實比較器」不是神諭:每個選項給數字與注記,排序供
   全繁中、手機優先、quote 表單+四選項卡片排比、最划算者加冠。
   launcher 不用改(錢包內分頁)。
 
+VERDICT: ACCEPTED (Fable, 2026-07-09; commit c0fc2d4). Migration
+0017 approved. VERIFIED after deploy + 0017 + user runs the two
+manual cases (one-night FNC=NT$0; two-night = 券+10,000)。
+
 ## AMENDMENT r1(Fable 2026-07-09,Sonnet review 後;優先於原文)
 
 E1 owner:hotel_stay_quotes 加 owner Text NOT NULL(住宿是
