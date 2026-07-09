@@ -8,6 +8,12 @@ USER INPUT REQUIRED BEFORE CODEX STARTS: the user's actual futures
 brokerage fee per contract (凱基) — without it the ticket uses the
 placeholder below and every result page must show "fee = placeholder".
 
+VERDICT: ACCEPTED (Fable, 2026-07-09; commit d21d946). Migration
+0015_backtest_engine approved. Tax rate cited to 法規資料庫.
+Known limitations logged (close-only stops, qty=1, placeholder fee —
+replace fee when user provides KGI schedule). VERIFIED after deploy
++ 0015 + one real spec run. Roadmap 14-19 now ALL ACCEPTED.
+
 PRE-START SONNET REVIEW: COMPLETED 2026-07-09(2 BLOCKER+4 HIGH,
 全數由 AMENDMENT 解決)。AMENDMENT 優先於原文,逐字實作。
 
