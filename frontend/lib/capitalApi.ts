@@ -200,6 +200,78 @@ export type MarketIngestResult = {
   }>;
 };
 
+export type TradePlan = {
+  id: number;
+  decision_request_id: number;
+  market: string;
+  symbol: string;
+  direction: string;
+  planned_entry: string;
+  stop_price: string;
+  target_price: string | null;
+  quantity: string;
+  declared_capital_twd: string;
+  thesis: string;
+  strategy_spec_id: number | null;
+  is_paper: boolean;
+  risk_check: {
+    passed: boolean;
+    forced_risk_level: string;
+    checks: Array<{ rule: string; passed: boolean; message: string }>;
+    risk_amount: string;
+    risk_currency: string;
+    risk_amount_twd: string;
+    max_allowed_twd: string;
+  };
+  created_at: string;
+};
+
+export type TradePlanCreateResponse = TradePlan & {
+  decision_request_status: string;
+  decision_request_risk_level: string;
+};
+
+export type TradePlanCreateRequest = {
+  market: "taifex" | "us";
+  symbol: string;
+  direction: "long" | "short";
+  planned_entry: string;
+  stop_price: string;
+  target_price?: string | null;
+  quantity: string;
+  declared_capital_twd: string;
+  thesis: string;
+  strategy_spec_id?: number | null;
+  is_paper: boolean;
+  created_by: string;
+};
+
+export type PlanOutcome = {
+  id: number;
+  trade_plan_id: number;
+  exit_price: string;
+  exit_at: string;
+  gross_pnl: string;
+  stop_respected: boolean;
+  notes: string | null;
+  holding_days: number | null;
+  planned_vs_actual: Record<string, unknown> | null;
+  currency: string;
+  created_at: string;
+};
+
+export type TradePlanStats = {
+  total_closed_plan_count: number;
+  by_currency: Array<{
+    currency: string;
+    closed_plan_count: number;
+    win_rate: number;
+    expectancy: string;
+    gross_pnl: string;
+    plan_adherence_rate: number;
+  }>;
+};
+
 export async function listCapitalDecisions(): Promise<CapitalDecisionListItem[]> {
   return requestJson<CapitalDecisionListItem[]>("/capital/decisions");
 }
@@ -289,6 +361,34 @@ export async function listMarketSanity(): Promise<MarketSanityRow[]> {
 
 export async function listMarketIngestRuns(): Promise<MarketIngestRun[]> {
   return requestJson<MarketIngestRun[]>("/capital/market-data/ingest-runs");
+}
+
+export async function listTradePlans(): Promise<TradePlan[]> {
+  return requestJson<TradePlan[]>("/capital/trade-plans");
+}
+
+export async function createTradePlan(payload: TradePlanCreateRequest): Promise<TradePlanCreateResponse> {
+  return requestJson<TradePlanCreateResponse>("/capital/trade-plans", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function markTradePlans(): Promise<{ inserted: number; skipped: number; warnings: string[] }> {
+  return requestJson<{ inserted: number; skipped: number; warnings: string[] }>("/capital/trade-plans/mark", {
+    method: "POST",
+  });
+}
+
+export async function closeTradePlan(planId: number, exitPrice: string, notes: string): Promise<PlanOutcome> {
+  return requestJson<PlanOutcome>(`/capital/trade-plans/${planId}/close`, {
+    method: "POST",
+    body: JSON.stringify({ exit_price: exitPrice, notes }),
+  });
+}
+
+export async function getTradePlanStats(): Promise<TradePlanStats> {
+  return requestJson<TradePlanStats>("/capital/trade-plans/stats");
 }
 
 async function requestJson<T>(path: string, init: RequestInit = {}): Promise<T> {

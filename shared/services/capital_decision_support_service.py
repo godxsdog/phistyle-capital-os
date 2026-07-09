@@ -80,6 +80,7 @@ def create_capital_decision_request(
     options: str | None,
     risk_level: str,
     created_by: str | None,
+    commit: bool = True,
 ) -> DecisionRequest:
     normalized_question = _required_trimmed(question, "question")
     normalized_context = _required_trimmed(context, "context")
@@ -96,6 +97,7 @@ def create_capital_decision_request(
         risk_level=normalized_risk_level,
         status=CAPITAL_INITIAL_STATUS,
         created_by=normalized_created_by,
+        commit=commit,
     )
 
 

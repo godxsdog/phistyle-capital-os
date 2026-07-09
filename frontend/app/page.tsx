@@ -15,6 +15,7 @@ const LAUNCHER_TILES: LauncherTile[] = [
   { emoji: "✈️", label: "換票比價", href: "/wallet/awards" },
   { emoji: "🔄", label: "轉點規則", href: "/wallet?tab=wanlitong" },
   { emoji: "📈", label: "交易決策", href: "/capital/decisions" },
+  { emoji: "📋", label: "交易計畫", href: "/capital/trade-plans" },
   { emoji: "📊", label: "交易紀錄", href: "/capital/history" },
   { emoji: "🛠", label: "工具", href: "/tools" },
   { emoji: "📡", label: "市場資料", href: "/capital/market-data" },

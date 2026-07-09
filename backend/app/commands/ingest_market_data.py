@@ -5,6 +5,7 @@ from datetime import date, timedelta
 
 from shared.database.session import SessionLocal
 from shared.services.market_data_service import ingest_taifex, ingest_yahoo_us
+from shared.services.trade_plan_service import mark_open_trade_plans
 
 
 def main() -> None:
@@ -24,6 +25,8 @@ def main() -> None:
         if args.source in {"yahoo", "all"}:
             result = ingest_yahoo_us(session)
             print(f"Yahoo {result.status}: inserted={result.inserted} skipped={result.skipped} warnings={len(result.warnings)}")
+        mtm = mark_open_trade_plans(session, mark_date=end_date)
+        print(f"Trade plan MTM: inserted={mtm.inserted} skipped={mtm.skipped} warnings={len(mtm.warnings)}")
 
 
 if __name__ == "__main__":

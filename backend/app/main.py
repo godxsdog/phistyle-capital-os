@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import date, timedelta
+from datetime import date, datetime, timezone, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -150,6 +150,16 @@ from shared.services.market_data_service import (
     list_watchlist_symbols,
     market_sanity_summary,
     update_watchlist_symbol,
+)
+from shared.services.trade_plan_service import (
+    TradePlanError,
+    TradePlanNotFoundError,
+    TradePlanOutcomeExistsError,
+    close_trade_plan,
+    create_trade_plan,
+    list_trade_plans,
+    mark_open_trade_plans,
+    trade_plan_stats,
 )
 from shared.services.tool_monitor_service import (
     ToolMonitorError,
@@ -469,6 +479,77 @@ class MarketIngestRunResponse(BaseModel):
     detail: str | None
     started_at: str
     finished_at: str | None
+
+
+class TradePlanCreateRequest(BaseModel):
+    market: str
+    symbol: str
+    direction: str
+    planned_entry: Decimal
+    stop_price: Decimal
+    target_price: Decimal | None = None
+    quantity: Decimal
+    declared_capital_twd: Decimal
+    thesis: str
+    strategy_spec_id: int | None = None
+    is_paper: bool = True
+    created_by: str | None = None
+
+    class Config:
+        extra = "forbid"
+
+
+class TradePlanResponse(BaseModel):
+    id: int
+    decision_request_id: int
+    market: str
+    symbol: str
+    direction: str
+    planned_entry: str
+    stop_price: str
+    target_price: str | None
+    quantity: str
+    declared_capital_twd: str
+    thesis: str
+    strategy_spec_id: int | None
+    is_paper: bool
+    risk_check: dict[str, Any]
+    created_at: str
+
+
+class TradePlanCreateResponse(TradePlanResponse):
+    decision_request_status: str
+    decision_request_risk_level: str
+
+
+class TradePlanCloseRequest(BaseModel):
+    exit_price: Decimal
+    exit_at: datetime | None = None
+    notes: str | None = None
+
+    class Config:
+        extra = "forbid"
+
+
+class PlanOutcomeResponse(BaseModel):
+    id: int
+    trade_plan_id: int
+    exit_price: str
+    exit_at: str
+    gross_pnl: str
+    stop_respected: bool
+    notes: str | None
+    holding_days: int | None
+    planned_vs_actual: dict[str, Any] | None
+    currency: str
+    created_at: str
+
+
+class PlanMarkResponse(BaseModel):
+    id: int
+    trade_plan_id: int
+    mark_date: str
+    close_price: str
 
 
 class ToolMonitorSettingsRequest(BaseModel):
@@ -1103,6 +1184,76 @@ def get_capital_market_data_sanity(session: Session = Depends(get_session)) -> l
 @app.get("/capital/market-data/ingest-runs", response_model=list[MarketIngestRunResponse])
 def get_capital_market_data_ingest_runs(session: Session = Depends(get_session)) -> list[dict[str, Any]]:
     return [_market_ingest_run_response(row) for row in list_ingest_runs(session)]
+
+
+@app.get("/capital/trade-plans", response_model=list[TradePlanResponse])
+def get_capital_trade_plans(session: Session = Depends(get_session)) -> list[dict[str, Any]]:
+    return [_trade_plan_response(row) for row in list_trade_plans(session)]
+
+
+@app.post("/capital/trade-plans", response_model=TradePlanCreateResponse)
+def post_capital_trade_plan(payload: TradePlanCreateRequest, session: Session = Depends(get_session)) -> dict[str, Any]:
+    try:
+        plan = create_trade_plan(
+            session,
+            market=payload.market,
+            symbol=payload.symbol,
+            direction=payload.direction,
+            planned_entry=payload.planned_entry,
+            stop_price=payload.stop_price,
+            target_price=payload.target_price,
+            quantity=payload.quantity,
+            declared_capital_twd=payload.declared_capital_twd,
+            thesis=payload.thesis,
+            strategy_spec_id=payload.strategy_spec_id,
+            is_paper=payload.is_paper,
+            created_by=payload.created_by,
+        )
+    except TradePlanError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    request = get_decision_request(session, plan.decision_request_id)
+    response = _trade_plan_response(plan)
+    response.update(
+        {
+            "decision_request_status": request.status.value if request is not None else "unknown",
+            "decision_request_risk_level": request.risk_level.value if request is not None else "unknown",
+        }
+    )
+    return response
+
+
+@app.post("/capital/trade-plans/mark")
+def post_capital_trade_plan_mark(mark_date: date | None = None, session: Session = Depends(get_session)) -> dict[str, Any]:
+    result = mark_open_trade_plans(session, mark_date=mark_date)
+    return {"inserted": result.inserted, "skipped": result.skipped, "warnings": result.warnings}
+
+
+@app.post("/capital/trade-plans/{plan_id}/close", response_model=PlanOutcomeResponse)
+def post_capital_trade_plan_close(
+    plan_id: int,
+    payload: TradePlanCloseRequest,
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    try:
+        outcome = close_trade_plan(
+            session,
+            plan_id=plan_id,
+            exit_price=payload.exit_price,
+            exit_at=payload.exit_at or datetime.now(timezone.utc),
+            notes=payload.notes,
+        )
+    except TradePlanNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except TradePlanOutcomeExistsError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except TradePlanError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return _plan_outcome_response(outcome)
+
+
+@app.get("/capital/trade-plans/stats")
+def get_capital_trade_plan_stats(session: Session = Depends(get_session)) -> dict[str, Any]:
+    return trade_plan_stats(session)
 
 
 @app.get("/tools/monitors/flight_watch", response_model=ToolMonitorSettingsResponse)
@@ -2414,6 +2565,42 @@ def _market_ingest_run_response(row) -> dict[str, Any]:
         "detail": row.detail,
         "started_at": row.started_at.isoformat(),
         "finished_at": row.finished_at.isoformat() if row.finished_at is not None else None,
+    }
+
+
+def _trade_plan_response(row) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "decision_request_id": row.decision_request_id,
+        "market": row.market,
+        "symbol": row.symbol,
+        "direction": row.direction,
+        "planned_entry": str(row.planned_entry),
+        "stop_price": str(row.stop_price),
+        "target_price": str(row.target_price) if row.target_price is not None else None,
+        "quantity": str(row.quantity),
+        "declared_capital_twd": str(row.declared_capital_twd),
+        "thesis": row.thesis,
+        "strategy_spec_id": row.strategy_spec_id,
+        "is_paper": row.is_paper,
+        "risk_check": json.loads(row.risk_check),
+        "created_at": row.created_at.isoformat(),
+    }
+
+
+def _plan_outcome_response(row) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "trade_plan_id": row.trade_plan_id,
+        "exit_price": str(row.exit_price),
+        "exit_at": row.exit_at.isoformat(),
+        "gross_pnl": str(row.gross_pnl),
+        "stop_respected": row.stop_respected,
+        "notes": row.notes,
+        "holding_days": row.holding_days,
+        "planned_vs_actual": json.loads(row.planned_vs_actual) if row.planned_vs_actual is not None else None,
+        "currency": row.currency,
+        "created_at": row.created_at.isoformat(),
     }
 
 

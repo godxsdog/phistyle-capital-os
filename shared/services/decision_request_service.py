@@ -40,6 +40,7 @@ def create_decision_request(
     created_by: str | None = None,
     related_knowledge_document_id: int | None = None,
     related_decision_log_id: int | None = None,
+    commit: bool = True,
 ) -> DecisionRequest:
     _validate_app_id(app_id)
     decision_request = DecisionRequest(
@@ -55,7 +56,10 @@ def create_decision_request(
         related_decision_log_id=related_decision_log_id,
     )
     session.add(decision_request)
-    session.commit()
+    if commit:
+        session.commit()
+    else:
+        session.flush()
     session.refresh(decision_request)
     return decision_request
 
