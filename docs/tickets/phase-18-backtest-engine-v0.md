@@ -8,6 +8,51 @@ USER INPUT REQUIRED BEFORE CODEX STARTS: the user's actual futures
 brokerage fee per contract (凱基) — without it the ticket uses the
 placeholder below and every result page must show "fee = placeholder".
 
+PRE-START SONNET REVIEW: COMPLETED 2026-07-09(2 BLOCKER+4 HIGH,
+全數由 AMENDMENT 解決)。AMENDMENT 優先於原文,逐字實作。
+
+## AMENDMENT (Fable, 2026-07-09 — BINDING)
+
+C1 策略 spec JSON(唯一合法形狀):
+  {name, market:"taifex"|"us", symbol, direction:"long"|"short",
+   start_date?, end_date?, entry:RULE, exit:{stop_pct?, target_pct?,
+   time_exit_days?, opposite_signal:bool}}
+  RULE 四型:
+  {type:"sma_cross", fast:int, slow:int}——close 的 SMA(fast)
+    上穿 SMA(slow) 觸發 long 進場;下穿觸發 short。
+  {type:"price_vs_sma", n:int, side:"above"|"below"}——close 穿越
+    至該側當日觸發。
+  {type:"breakout", n:int}——long:close > 前 n 日最高 high;
+    short:close < 前 n 日最低 low。
+  {type:"inst_net", product:"TX"|"MTX"|"TMF", identity:"foreign"|
+    "trust"|"dealer", op:">"|"<", threshold:int}——當日該法人
+    net_contracts 滿足條件觸發(僅 taifex)。
+  執行時點(v0 確定性簡化,文件標明):訊號以 t 日收盤計算,
+  成交價 = t 日 close ± 滑價;stop/target 以後續每日 close 檢查
+  (不看盤中高低,已知限制)。
+C2 walk-forward:區間 = spec 宣告範圍,未宣告則用該 symbol 可用
+  bars 全range;前 70% 交易日 = in-sample、後 30% = out-of-sample,
+  同參數各跑一次。decay_ratio = oos_expectancy / is_expectancy
+  (is_expectancy ≤ 0 時顯示 n/a)。
+C3 成本:期交稅基 = 指數 × 點值 × 口數,每邊課稅;fixture 稅率
+  用 0.00002,實際稅率 Codex 查證引用。US 滑價基 = price × shares
+  × 0.0005/邊。淨損益 = 毛損益 −(手續費+稅+滑價)×2邊。
+C4 指標公式:equity curve = 逐筆平倉淨損益累加;max_drawdown =
+  equity 峰谷最大落差;expectancy = 淨損益均值/筆;win_rate =
+  獲利筆數/總筆數。TWD 與 USD 永不相加。
+C5 §9 MIGRATION EXPECTED:一個 additive,id ≤32:
+  strategy_specs(id PK; name Text NOT NULL UNIQUE; market/symbol/
+  direction Text NOT NULL; spec_json Text NOT NULL; created_at tstz
+  NOT NULL default now)、backtest_runs(id PK; strategy_spec_id FK
+  RESTRICT NOT NULL; range_start/range_end Date NOT NULL;
+  spec_snapshot_json/cost_params_json/results_json Text NOT NULL;
+  run_hash Text NOT NULL UNIQUE; created_at)。冪等鍵 = run_hash =
+  sha256(spec_snapshot+range+cost_params),命中即回既有 run。
+C6 trade_plans.strategy_spec_id 的 FK 約束:本 phase OUT OF SCOPE
+  (維持 Integer 無約束,列入未來 janitorial)。
+C7 新頁面必須加入 frontend/app/page.tsx 的 LAUNCHER_TILES:
+  🧪 回測(/capital/backtests)。
+
 ## 3. STRATEGIC DECISIONS ALREADY MADE
 
 - Deliberately MINIMAL rule engine. v0 strategy spec (JSON, stored):
