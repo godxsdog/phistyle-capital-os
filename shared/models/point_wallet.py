@@ -215,6 +215,25 @@ class HotelVoucher(Base):
     program: Mapped[PointProgram] = relationship()
 
 
+class HotelStayQuote(Base):
+    __tablename__ = "hotel_stay_quotes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner: Mapped[str] = mapped_column(Text, nullable=False)
+    hotel_name: Mapped[str] = mapped_column(Text, nullable=False)
+    stay_date: Mapped[date] = mapped_column(Date, nullable=False)
+    nights: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    program_id: Mapped[int] = mapped_column(ForeignKey("programs.id", ondelete="RESTRICT"), nullable=False)
+    cash_price_twd: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
+    points_price_per_night: Mapped[Decimal] = mapped_column(Numeric(18, 0), nullable=False)
+    taxes_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    topup_allowed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    topup_points: Mapped[Decimal | None] = mapped_column(Numeric(18, 0), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(nullable=False, default=lambda: datetime.now(UTC))
+
+    program: Mapped[PointProgram] = relationship()
+
+
 class ExpiryAlert(Base):
     __tablename__ = "expiry_alerts"
     __table_args__ = (

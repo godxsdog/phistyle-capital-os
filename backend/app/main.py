@@ -81,6 +81,11 @@ from shared.services.human_review_service import (
     list_human_reviews_for_decision_log,
     review_decision_log,
 )
+from shared.services.hotel_compare_service import (
+    create_hotel_stay_quote,
+    evaluate_hotel_stay_quote,
+    list_hotel_stay_quotes,
+)
 from shared.services.exchange_rate_service import list_fx_rates, refresh_fx_rates
 from shared.services.award_cost_engine import (
     create_award_quote,
@@ -944,6 +949,43 @@ class HotelVoucherResponse(BaseModel):
     created_at: str
 
 
+class HotelStayQuoteRequest(BaseModel):
+    owner: str
+    hotel_name: str
+    stay_date: date
+    nights: int = 1
+    program_id: int
+    cash_price_twd: Decimal
+    points_price_per_night: Decimal
+    taxes_note: str | None = None
+    topup_allowed: bool = False
+    topup_points: Decimal | None = None
+
+
+class HotelStayQuoteResponse(BaseModel):
+    id: int
+    owner: str
+    hotel_name: str
+    stay_date: str
+    nights: int
+    program_id: int
+    program_name: str
+    cash_price_twd: str
+    points_price_per_night: str
+    taxes_note: str | None
+    topup_allowed: bool
+    topup_points: str | None
+    created_at: str
+
+
+class HotelStayEvaluationResponse(BaseModel):
+    quote: dict[str, Any]
+    cpp: str
+    total_points: str
+    options: list[dict[str, Any]]
+    notes: list[str]
+
+
 class FxRateResponse(BaseModel):
     id: int
     currency: str
@@ -1691,6 +1733,50 @@ def patch_wallet_hotel_voucher_status(
     except PointWalletError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return _hotel_voucher_response(row)
+
+
+@app.get("/wallet/hotel-stay-quotes", response_model=list[HotelStayQuoteResponse])
+def get_wallet_hotel_stay_quotes(session: Session = Depends(get_session)) -> list[dict[str, Any]]:
+    return [_hotel_stay_quote_response(row) for row in list_hotel_stay_quotes(session)]
+
+
+@app.post("/wallet/hotel-stay-quotes", response_model=HotelStayQuoteResponse)
+def post_wallet_hotel_stay_quote(
+    request: HotelStayQuoteRequest,
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    try:
+        row = create_hotel_stay_quote(
+            session,
+            owner=request.owner,
+            hotel_name=request.hotel_name,
+            stay_date=request.stay_date,
+            nights=request.nights,
+            program_id=request.program_id,
+            cash_price_twd=request.cash_price_twd,
+            points_price_per_night=request.points_price_per_night,
+            taxes_note=request.taxes_note,
+            topup_allowed=request.topup_allowed,
+            topup_points=request.topup_points,
+        )
+    except PointWalletNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PointWalletError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return _hotel_stay_quote_response(row)
+
+
+@app.post("/wallet/hotel-stay-quotes/{quote_id}/evaluate", response_model=HotelStayEvaluationResponse)
+def post_wallet_hotel_stay_quote_evaluate(
+    quote_id: int,
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    try:
+        return evaluate_hotel_stay_quote(session, quote_id)
+    except PointWalletNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PointWalletError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @app.get("/wallet/award-quotes", response_model=list[AwardQuoteResponse])
@@ -2659,6 +2745,24 @@ def _hotel_voucher_response(row: HotelVoucher) -> dict[str, Any]:
         "status": row.status,
         "acquired_note": row.acquired_note,
         "used_note": row.used_note,
+        "created_at": row.created_at.isoformat(),
+    }
+
+
+def _hotel_stay_quote_response(row) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "owner": row.owner,
+        "hotel_name": row.hotel_name,
+        "stay_date": row.stay_date.isoformat(),
+        "nights": row.nights,
+        "program_id": row.program_id,
+        "program_name": row.program.name,
+        "cash_price_twd": str(row.cash_price_twd),
+        "points_price_per_night": str(row.points_price_per_night),
+        "taxes_note": row.taxes_note,
+        "topup_allowed": row.topup_allowed,
+        "topup_points": str(row.topup_points) if row.topup_points is not None else None,
         "created_at": row.created_at.isoformat(),
     }
 

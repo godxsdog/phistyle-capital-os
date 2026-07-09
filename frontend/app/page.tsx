@@ -13,6 +13,7 @@ type LauncherTile = {
 const LAUNCHER_TILES: LauncherTile[] = [
   { emoji: "💰", label: "錢包總覽", href: "/wallet" },
   { emoji: "✈️", label: "換票比價", href: "/wallet/awards" },
+  { emoji: "🏨", label: "住宿比價", href: "/wallet/hotels" },
   { emoji: "🔄", label: "轉點規則", href: "/wallet?tab=wanlitong" },
   { emoji: "📈", label: "交易決策", href: "/capital/decisions" },
   { emoji: "📋", label: "交易計畫", href: "/capital/trade-plans" },

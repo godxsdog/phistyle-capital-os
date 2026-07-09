@@ -176,6 +176,44 @@ export type HotelVoucher = {
   created_at: string;
 };
 
+export type HotelStayQuote = {
+  id: number;
+  owner: "kent" | "wife" | string;
+  hotel_name: string;
+  stay_date: string;
+  nights: number;
+  program_id: number;
+  program_name: string;
+  cash_price_twd: string;
+  points_price_per_night: string;
+  taxes_note: string | null;
+  topup_allowed: boolean;
+  topup_points: string | null;
+  created_at: string;
+};
+
+export type HotelStayOption = {
+  method: "cash" | "points" | "voucher" | "voucher_topup" | string;
+  label: string;
+  available: boolean;
+  cash_cost_twd: string | null;
+  rank: number | null;
+  notes: string[];
+  voucher_ids: number[];
+  nights_with_voucher: number;
+  nights_with_points: number;
+  points_consumed: string;
+  lots_consumed?: Array<Record<string, string | number>>;
+};
+
+export type HotelStayEvaluation = {
+  quote: HotelStayQuote;
+  cpp: string;
+  total_points: string;
+  options: HotelStayOption[];
+  notes: string[];
+};
+
 export async function listPrograms(): Promise<Program[]> {
   return requestJson<Program[]>("/wallet/programs");
 }
@@ -308,6 +346,29 @@ export async function updateHotelVoucherStatus(id: number, payload: {
   used_note?: string | null;
 }): Promise<HotelVoucher> {
   return requestJson<HotelVoucher>(`/wallet/hotel-vouchers/${id}/status`, { method: "PATCH", body: JSON.stringify(payload) });
+}
+
+export async function listHotelStayQuotes(): Promise<HotelStayQuote[]> {
+  return requestJson<HotelStayQuote[]>("/wallet/hotel-stay-quotes");
+}
+
+export async function createHotelStayQuote(payload: {
+  owner: string;
+  hotel_name: string;
+  stay_date: string;
+  nights: number;
+  program_id: number;
+  cash_price_twd: string;
+  points_price_per_night: string;
+  taxes_note?: string | null;
+  topup_allowed: boolean;
+  topup_points?: string | null;
+}): Promise<HotelStayQuote> {
+  return requestJson<HotelStayQuote>("/wallet/hotel-stay-quotes", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export async function evaluateHotelStayQuote(quoteId: number): Promise<HotelStayEvaluation> {
+  return requestJson<HotelStayEvaluation>(`/wallet/hotel-stay-quotes/${quoteId}/evaluate`, { method: "POST" });
 }
 
 export async function refreshFxRates(): Promise<{ source: string; created: string }> {
