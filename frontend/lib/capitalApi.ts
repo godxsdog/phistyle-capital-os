@@ -272,6 +272,66 @@ export type TradePlanStats = {
   }>;
 };
 
+export type StrategySpec = {
+  id: number;
+  name: string;
+  market: string;
+  symbol: string;
+  direction: string;
+  spec_snapshot: Record<string, unknown>;
+  created_at: string;
+};
+
+export type BacktestTrade = {
+  entry_date: string;
+  exit_date: string;
+  entry_price: string;
+  exit_price: string;
+  gross_pnl: string;
+  fee: string;
+  tax: string;
+  slippage: string;
+  net_pnl: string;
+  currency: string;
+};
+
+export type BacktestWindowResult = {
+  trades: BacktestTrade[];
+  equity_curve: Array<{ date: string; equity: string }>;
+  metrics: {
+    trade_count: number;
+    net_pnl: string;
+    max_drawdown: string;
+    win_rate: number;
+    expectancy: string;
+    exposure_days: number;
+  };
+};
+
+export type BacktestRun = {
+  id: number;
+  strategy_spec_id: number;
+  range_start: string;
+  range_end: string;
+  spec_snapshot: Record<string, unknown>;
+  cost_params: Record<string, unknown>;
+  results: {
+    cost_disclaimer?: string;
+    tax_source_url?: string | null;
+    known_limitations?: string[];
+    split?: Record<string, unknown>;
+    full?: BacktestWindowResult;
+    in_sample?: BacktestWindowResult;
+    out_of_sample?: BacktestWindowResult;
+  };
+  run_hash: string;
+  created_at: string;
+};
+
+export type BacktestRunCreateResponse = BacktestRun & {
+  created: boolean;
+};
+
 export async function listCapitalDecisions(): Promise<CapitalDecisionListItem[]> {
   return requestJson<CapitalDecisionListItem[]>("/capital/decisions");
 }
@@ -389,6 +449,25 @@ export async function closeTradePlan(planId: number, exitPrice: string, notes: s
 
 export async function getTradePlanStats(): Promise<TradePlanStats> {
   return requestJson<TradePlanStats>("/capital/trade-plans/stats");
+}
+
+export async function listBacktestSpecs(): Promise<StrategySpec[]> {
+  return requestJson<StrategySpec[]>("/capital/backtests/specs");
+}
+
+export async function listBacktestRuns(): Promise<BacktestRun[]> {
+  return requestJson<BacktestRun[]>("/capital/backtests/runs");
+}
+
+export async function getBacktestRun(runId: number): Promise<BacktestRun> {
+  return requestJson<BacktestRun>(`/capital/backtests/runs/${runId}`);
+}
+
+export async function runBacktest(spec: Record<string, unknown>): Promise<BacktestRunCreateResponse> {
+  return requestJson<BacktestRunCreateResponse>("/capital/backtests/run", {
+    method: "POST",
+    body: JSON.stringify({ spec }),
+  });
 }
 
 async function requestJson<T>(path: string, init: RequestInit = {}): Promise<T> {

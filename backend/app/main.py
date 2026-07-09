@@ -89,6 +89,13 @@ from shared.services.award_cost_engine import (
     list_award_quotes,
     list_funding_scenarios,
 )
+from shared.services.backtest_service import (
+    BacktestError,
+    get_backtest_run,
+    list_backtest_runs,
+    list_strategy_specs,
+    run_backtest,
+)
 from shared.services.point_wallet_service import (
     PointWalletError,
     PointWalletNotFoundError,
@@ -550,6 +557,39 @@ class PlanMarkResponse(BaseModel):
     trade_plan_id: int
     mark_date: str
     close_price: str
+
+
+class BacktestRunRequest(BaseModel):
+    spec: dict[str, Any]
+
+    class Config:
+        extra = "forbid"
+
+
+class StrategySpecResponse(BaseModel):
+    id: int
+    name: str
+    market: str
+    symbol: str
+    direction: str
+    spec_snapshot: dict[str, Any]
+    created_at: str
+
+
+class BacktestRunResponse(BaseModel):
+    id: int
+    strategy_spec_id: int
+    range_start: str
+    range_end: str
+    spec_snapshot: dict[str, Any]
+    cost_params: dict[str, Any]
+    results: dict[str, Any]
+    run_hash: str
+    created_at: str
+
+
+class BacktestRunCreateResponse(BacktestRunResponse):
+    created: bool
 
 
 class ToolMonitorSettingsRequest(BaseModel):
@@ -1254,6 +1294,35 @@ def post_capital_trade_plan_close(
 @app.get("/capital/trade-plans/stats")
 def get_capital_trade_plan_stats(session: Session = Depends(get_session)) -> dict[str, Any]:
     return trade_plan_stats(session)
+
+
+@app.get("/capital/backtests/specs", response_model=list[StrategySpecResponse])
+def get_capital_backtest_specs(session: Session = Depends(get_session)) -> list[dict[str, Any]]:
+    return [_strategy_spec_response(row) for row in list_strategy_specs(session)]
+
+
+@app.get("/capital/backtests/runs", response_model=list[BacktestRunResponse])
+def get_capital_backtest_runs(session: Session = Depends(get_session)) -> list[dict[str, Any]]:
+    return [_backtest_run_response(row) for row in list_backtest_runs(session)]
+
+
+@app.get("/capital/backtests/runs/{run_id}", response_model=BacktestRunResponse)
+def get_capital_backtest_run(run_id: int, session: Session = Depends(get_session)) -> dict[str, Any]:
+    row = get_backtest_run(session, run_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="backtest run not found")
+    return _backtest_run_response(row)
+
+
+@app.post("/capital/backtests/run", response_model=BacktestRunCreateResponse)
+def post_capital_backtest_run(payload: BacktestRunRequest, session: Session = Depends(get_session)) -> dict[str, Any]:
+    try:
+        result = run_backtest(session, payload.spec)
+    except BacktestError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    response = _backtest_run_response(result.backtest_run)
+    response["created"] = result.created
+    return response
 
 
 @app.get("/tools/monitors/flight_watch", response_model=ToolMonitorSettingsResponse)
@@ -2600,6 +2669,32 @@ def _plan_outcome_response(row) -> dict[str, Any]:
         "holding_days": row.holding_days,
         "planned_vs_actual": json.loads(row.planned_vs_actual) if row.planned_vs_actual is not None else None,
         "currency": row.currency,
+        "created_at": row.created_at.isoformat(),
+    }
+
+
+def _strategy_spec_response(row) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "name": row.name,
+        "market": row.market,
+        "symbol": row.symbol,
+        "direction": row.direction,
+        "spec_snapshot": json.loads(row.spec_json),
+        "created_at": row.created_at.isoformat(),
+    }
+
+
+def _backtest_run_response(row) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "strategy_spec_id": row.strategy_spec_id,
+        "range_start": row.range_start.isoformat(),
+        "range_end": row.range_end.isoformat(),
+        "spec_snapshot": json.loads(row.spec_snapshot_json),
+        "cost_params": json.loads(row.cost_params_json),
+        "results": json.loads(row.results_json),
+        "run_hash": row.run_hash,
         "created_at": row.created_at.isoformat(),
     }
 

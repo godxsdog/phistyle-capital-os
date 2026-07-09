@@ -17,8 +17,9 @@ const LAUNCHER_TILES: LauncherTile[] = [
   { emoji: "📈", label: "交易決策", href: "/capital/decisions" },
   { emoji: "📋", label: "交易計畫", href: "/capital/trade-plans" },
   { emoji: "📊", label: "交易紀錄", href: "/capital/history" },
-  { emoji: "🛠", label: "工具", href: "/tools" },
   { emoji: "📡", label: "市場資料", href: "/capital/market-data" },
+  { emoji: "🧪", label: "回測", href: "/capital/backtests" },
+  { emoji: "🛠", label: "工具", href: "/tools" },
 ];
 
 async function getHealth(): Promise<string> {
