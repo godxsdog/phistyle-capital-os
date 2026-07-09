@@ -12,6 +12,7 @@ COPY migrations ./migrations
 COPY phistyle_platform ./phistyle_platform
 COPY services ./services
 COPY shared ./shared
+COPY tools ./tools
 
 ENV PYTHONPATH=/app
 
