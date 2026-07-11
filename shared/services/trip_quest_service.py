@@ -520,7 +520,8 @@ def _cached_detail_buckets(
 ) -> list[dict[str, Any]] | None:
     if availability_id in local_cache:
         return local_cache[availability_id]
-    note = f"seats_trip_detail:{availability_id}"
+    normalized_cabin = normalize_cabin(cabin)
+    note = f"seats_trip_detail:{normalized_cabin}:{availability_id}"
     watch = session.scalar(select(AwardWatch).where(AwardWatch.note == note).order_by(AwardWatch.id))
     if watch is None:
         watch = create_award_watch(

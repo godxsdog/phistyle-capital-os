@@ -249,6 +249,7 @@ function ResultCard({ result, quest, fxRates, promoted, onPromote }: { result: Q
   const segments = parseSegments(result.segments_json);
   return <article className={`${styles.resultCard} ${result.rank === 1 ? styles.winner : ""}`}>
     {result.rank === 1 ? <div className={styles.winnerBand}>♛ 第一名</div> : null}
+    {quest?.kind === "chain" ? <div className={styles.resultDate}>{formatQuestDate(segments[0]?.date ?? result.outbound_date)}</div> : null}
     <div className={styles.resultRank}>#{result.rank}</div>
     {quest?.kind === "chain" ? <div className={styles.chainLegs}>{segments.map((segment, index) => <div className={styles.leg} key={`${segment.origin}-${segment.destination}-${index}`}><span>第 {index + 1} 段 {segment.origin} → {segment.destination}</span><strong>{formatPoints(segment.miles_required)} 哩</strong><small>{taxDisplay(segment.taxes, fxRates)}</small></div>)}</div> : <>
       <div className={styles.leg}><span>去程 {result.outbound_date.replaceAll("-", "/")}</span><strong>{formatPoints(result.outbound_miles)} 哩</strong><small>{taxDisplay(result.outbound_taxes, fxRates)}</small></div>
@@ -275,6 +276,12 @@ function taxDisplay(value: string | null, rates: FxRate[]): string {
 }
 
 function formatPoints(value: string): string { return Number(value).toLocaleString("zh-TW", { maximumFractionDigits: 0 }); }
+function formatQuestDate(value: string): string {
+  const [year, month, day] = value.split("-").map(Number);
+  if (!year || !month || !day) return value.replaceAll("-", "/");
+  const weekday = new Intl.DateTimeFormat("zh-TW", { weekday: "short", timeZone: "UTC" }).format(new Date(Date.UTC(year, month - 1, day)));
+  return `${year}/${String(month).padStart(2, "0")}/${String(day).padStart(2, "0")}（${weekday}）`;
+}
 function slug(value: string): string { return value.toLowerCase().replace(/[\s_-]/g, ""); }
 function field(data: FormData, name: string): string { const value = data.get(name); return typeof value === "string" ? value : ""; }
 function isBucketVerified(value: string | null): boolean { try { return Boolean(value && (JSON.parse(value) as { bucket_verified?: boolean }).bucket_verified); } catch { return false; } }

@@ -14,6 +14,7 @@
 .resultCard { position: relative; display: grid; grid-template-columns: 52px repeat(2, minmax(150px, 1fr)) minmax(170px, 1fr) auto; gap: 16px; align-items: center; overflow: hidden; border: 1px solid var(--line); background: var(--surface); padding: 18px; }
 .winner { border: 2px solid var(--accent); padding-top: 48px; }
 .winnerBand { position: absolute; inset: 0 0 auto; background: color-mix(in srgb, var(--accent) 22%, var(--panel)); color: var(--accent); padding: 8px 18px; font-weight: 800; }
+.resultDate { grid-column: 1 / -1; font-size: clamp(1.25rem, 5vw, 1.75rem); font-weight: 800; color: var(--ink); letter-spacing: 0; }
 .resultRank { font-size: 20px; font-weight: 800; color: var(--muted); }
 .leg, .total { display: grid; gap: 4px; }
 .chainLegs { grid-column: span 2; display: grid; grid-template-columns: repeat(3, minmax(140px, 1fr)); gap: 12px; }
