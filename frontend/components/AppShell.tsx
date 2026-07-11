@@ -29,6 +29,7 @@ const BOTTOM_NAV_ITEMS: NavItem[] = [
 ];
 
 const MORE_NAV_ITEMS: NavItem[] = [
+  { emoji: "🧭", label: "旅程尋票", href: "/wallet/quests" },
   { emoji: "🏨", label: "住宿比價", href: "/wallet/hotels" },
   { emoji: "📈", label: "交易決策", href: "/capital/decisions" },
   { emoji: "📊", label: "交易紀錄", href: "/capital/history" },

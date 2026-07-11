@@ -113,7 +113,44 @@ export type AwardQuote = {
   taxes_currency: string | null;
   cash_price_twd: string | null;
   source: string;
+  note: string | null;
   created_at: string;
+};
+
+export type TripQuest = {
+  id: number;
+  origin: string;
+  destination: string;
+  programs: string[];
+  window_start: string;
+  window_end: string;
+  trip_days: number;
+  cabin: string;
+  pax: number;
+  created_at: string;
+};
+
+export type QuestResult = {
+  id: number;
+  trip_quest_id: number;
+  run_date: string;
+  rank: number;
+  program: string;
+  outbound_date: string;
+  return_date: string;
+  outbound_miles: string;
+  return_miles: string;
+  total_miles: string;
+  outbound_taxes: string | null;
+  return_taxes: string | null;
+  seats_min: number;
+  raw_refs: string | null;
+};
+
+export type TripQuestRunResponse = {
+  quest: TripQuest;
+  results: QuestResult[];
+  created_results: number;
 };
 
 export type FundingScenario = {
@@ -403,8 +440,30 @@ export async function createAwardQuote(payload: {
   taxes_currency?: string | null;
   cash_price_twd?: string | null;
   source?: string;
+  note?: string | null;
 }): Promise<AwardQuote> {
   return requestJson<AwardQuote>("/wallet/award-quotes", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export async function listTripQuests(): Promise<TripQuest[]> {
+  return requestJson<TripQuest[]>("/wallet/trip-quests");
+}
+
+export async function runTripQuest(payload: {
+  origin: string;
+  destination: string;
+  programs: string[];
+  window_start: string;
+  window_end: string;
+  trip_days: number;
+  cabin: string;
+  pax: number;
+}): Promise<TripQuestRunResponse> {
+  return requestJson<TripQuestRunResponse>("/wallet/trip-quests/run", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export async function listQuestResults(questId: number): Promise<QuestResult[]> {
+  return requestJson<QuestResult[]>(`/wallet/trip-quests/${questId}/results`);
 }
 
 export async function evaluateAwardQuote(quoteId: number, evaluationDate?: string): Promise<FundingScenario[]> {

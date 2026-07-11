@@ -138,6 +138,7 @@ class AwardQuote(Base):
     taxes_currency: Mapped[str | None] = mapped_column(Text, nullable=True)
     cash_price_twd: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
     source: Mapped[str] = mapped_column(Text, nullable=False, default="manual")
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(nullable=False, default=lambda: datetime.now(UTC))
 
     program: Mapped[PointProgram] = relationship()
@@ -197,6 +198,43 @@ class AwardSnapshot(Base):
     created_at: Mapped[datetime] = mapped_column(nullable=False, default=lambda: datetime.now(UTC))
 
     watch: Mapped[AwardWatch] = relationship()
+
+
+class TripQuest(Base):
+    __tablename__ = "trip_quests"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    origin: Mapped[str] = mapped_column(Text, nullable=False)
+    destination: Mapped[str] = mapped_column(Text, nullable=False)
+    programs: Mapped[str] = mapped_column(Text, nullable=False)
+    window_start: Mapped[date] = mapped_column(Date, nullable=False)
+    window_end: Mapped[date] = mapped_column(Date, nullable=False)
+    trip_days: Mapped[int] = mapped_column(Integer, nullable=False)
+    cabin: Mapped[str] = mapped_column(Text, nullable=False)
+    pax: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    created_at: Mapped[datetime] = mapped_column(nullable=False, default=lambda: datetime.now(UTC))
+
+
+class QuestResult(Base):
+    __tablename__ = "quest_results"
+    __table_args__ = (UniqueConstraint("trip_quest_id", "run_date", "rank"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    trip_quest_id: Mapped[int] = mapped_column(ForeignKey("trip_quests.id", ondelete="CASCADE"), nullable=False)
+    run_date: Mapped[date] = mapped_column(Date, nullable=False)
+    rank: Mapped[int] = mapped_column(Integer, nullable=False)
+    program: Mapped[str] = mapped_column(Text, nullable=False)
+    outbound_date: Mapped[date] = mapped_column(Date, nullable=False)
+    return_date: Mapped[date] = mapped_column(Date, nullable=False)
+    outbound_miles: Mapped[Decimal] = mapped_column(Numeric(18, 0), nullable=False)
+    return_miles: Mapped[Decimal] = mapped_column(Numeric(18, 0), nullable=False)
+    total_miles: Mapped[Decimal] = mapped_column(Numeric(18, 0), nullable=False)
+    outbound_taxes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    return_taxes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    seats_min: Mapped[int] = mapped_column(Integer, nullable=False)
+    raw_refs: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    trip_quest: Mapped[TripQuest] = relationship()
 
 
 class HotelVoucher(Base):

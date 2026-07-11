@@ -31,6 +31,7 @@ type ExpiryAlertSummary = {
 const LAUNCHER_TILES: LauncherTile[] = [
   { emoji: "💰", label: "錢包總覽", href: "/wallet", note: "餘額、成本、到期提醒" },
   { emoji: "✈️", label: "換票比價", href: "/wallet/awards", note: "里程需求與補點成本" },
+  { emoji: "🧭", label: "旅程尋票", href: "/wallet/quests", note: "來回日期窗與哩程配對" },
   { emoji: "🏨", label: "住宿比價", href: "/wallet/hotels", note: "現金、點數、房券比較" },
   { emoji: "🔄", label: "轉點規則", href: "/wallet?tab=wanlitong", note: "來源計畫視角管理" },
   { emoji: "📈", label: "交易決策", href: "/capital/decisions", note: "Brain 與人工審查狀態" },

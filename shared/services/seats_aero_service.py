@@ -368,6 +368,7 @@ def normalize_cached_search_payload(payload: dict[str, Any], *, cabin: str) -> l
                 "program_source": _string_or_none(item.get("Source")) or _string_or_none(route.get("Source")),
                 "miles_required": str(miles),
                 "remaining_seats": _parse_int(item.get(f"{prefix}RemainingSeats")),
+                "taxes": _normalize_taxes(item.get(f"{prefix}Taxes")),
                 "airlines": _string_or_none(item.get(f"{prefix}Airlines")),
                 "direct": bool(item.get(f"{prefix}Direct")),
                 "updated_at": _string_or_none(item.get("UpdatedAt")),
@@ -451,6 +452,19 @@ def _parse_int(value: Any) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _normalize_taxes(value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, dict):
+        amount = value.get("Amount") or value.get("amount")
+        currency = value.get("Currency") or value.get("currency")
+        if amount is not None and currency:
+            return f"{amount} {str(currency).upper()}"
+        return json.dumps(value, ensure_ascii=False, sort_keys=True)
+    text = str(value).strip()
+    return text or None
 
 
 def _parse_date(value: Any) -> date | None:

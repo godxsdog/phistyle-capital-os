@@ -349,3 +349,91 @@ def test_wallet_hotel_voucher_routes_and_status_guard():
     assert used.status_code == 200
     assert used.json()["status"] == "used"
     assert rejected.status_code == 409
+
+
+def test_trip_quest_promotion_creates_exactly_two_linked_award_quotes():
+    client = make_client()
+    alaska = client.post("/wallet/programs", json={"name": "Alaska", "kind": "airline"}).json()
+
+    outbound = client.post(
+        "/wallet/award-quotes",
+        json={
+            "origin": "TPE",
+            "destination": "OKA",
+            "travel_date": "2026-09-03",
+            "cabin": "economy",
+            "pax": 2,
+            "program_id": alaska["id"],
+            "miles_required": "12000",
+            "source": "trip_quest",
+            "note": "旅程尋票 #42 去程",
+        },
+    )
+    returning = client.post(
+        "/wallet/award-quotes",
+        json={
+            "origin": "OKA",
+            "destination": "TPE",
+            "travel_date": "2026-09-07",
+            "cabin": "economy",
+            "pax": 2,
+            "program_id": alaska["id"],
+            "miles_required": "6000",
+            "source": "trip_quest",
+            "note": "旅程尋票 #42 回程",
+        },
+    )
+
+    quotes = client.get("/wallet/award-quotes").json()
+    assert outbound.status_code == 200
+    assert returning.status_code == 200
+    assert len(quotes) == 2
+    assert {quote["note"] for quote in quotes} == {"旅程尋票 #42 去程", "旅程尋票 #42 回程"}
+
+
+def test_trip_quest_run_route_uses_mocked_seats_and_is_idempotent(monkeypatch):
+    client = make_client()
+    client.post("/wallet/programs", json={"name": "Alaska", "kind": "airline"})
+    calls = []
+
+    def fake_search(self, **kwargs):
+        calls.append((kwargs["origin"], kwargs["destination"]))
+        outbound = kwargs["origin"] == "TPE"
+        return {
+            "data": [
+                {
+                    "ID": "out" if outbound else "back",
+                    "Route": {
+                        "OriginAirport": kwargs["origin"],
+                        "DestinationAirport": kwargs["destination"],
+                    },
+                    "Date": "2026-09-01" if outbound else "2026-09-05",
+                    "YAvailable": True,
+                    "YMileageCost": "10000" if outbound else "8000",
+                    "YRemainingSeats": 2,
+                    "Source": "Alaska",
+                }
+            ]
+        }
+
+    monkeypatch.setattr("shared.services.seats_aero_service.SeatsAeroClient.cached_search", fake_search)
+    payload = {
+        "origin": "TPE",
+        "destination": "OKA",
+        "programs": ["Alaska"],
+        "window_start": "2026-09-01",
+        "window_end": "2026-09-30",
+        "trip_days": 4,
+        "cabin": "economy",
+        "pax": 2,
+    }
+
+    first = client.post("/wallet/trip-quests/run", json=payload)
+    second = client.post("/wallet/trip-quests/run", json=payload)
+
+    assert first.status_code == 200
+    assert first.json()["created_results"] == 1
+    assert first.json()["results"][0]["total_miles"] == "18000"
+    assert second.status_code == 200
+    assert second.json()["created_results"] == 0
+    assert calls == [("TPE", "OKA"), ("OKA", "TPE")]

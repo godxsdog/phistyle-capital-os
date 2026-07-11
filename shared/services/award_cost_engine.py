@@ -121,6 +121,7 @@ def create_award_quote(
     taxes_currency: str | None = None,
     cash_price_twd: Decimal | None = None,
     source: str = "manual",
+    note: str | None = None,
 ) -> AwardQuote:
     if pax < 1:
         raise PointWalletError("pax must be at least 1")
@@ -140,6 +141,7 @@ def create_award_quote(
         taxes_currency=taxes_currency.upper() if taxes_currency else None,
         cash_price_twd=cash_price_twd,
         source=source,
+        note=note,
         created_at=datetime.now(UTC),
     )
     session.add(row)

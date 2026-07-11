@@ -39,7 +39,7 @@ from shared.models.knowledge import (
     StorageBackend,
 )
 from shared.models.human_review import HumanReviewDecision
-from shared.models.point_wallet import AwardSnapshot, AwardWatch, ExpiryAlert, HotelVoucher, PointProgram, TransferRule
+from shared.models.point_wallet import AwardSnapshot, AwardWatch, ExpiryAlert, HotelVoucher, PointProgram, QuestResult, TransferRule, TripQuest
 from shared.models.triage import TriageRecommendation, TriageResult, TriageRiskLevel
 from shared.services.brain_review_service import (
     create_brain_review,
@@ -132,6 +132,13 @@ from shared.services.seats_aero_service import (
     promote_snapshot_to_award_quote,
     scan_expiry_alerts,
     update_award_watch,
+)
+from shared.services.trip_quest_service import (
+    TripQuestError,
+    get_trip_quest,
+    list_quest_results,
+    list_trip_quests,
+    run_trip_quest,
 )
 from shared.services.decision_request_service import (
     DecisionRequestStatusTransitionError,
@@ -820,6 +827,7 @@ class AwardQuoteRequest(BaseModel):
     taxes_currency: str | None = None
     cash_price_twd: Decimal | None = None
     source: str = "manual"
+    note: str | None = None
 
 
 class AwardQuoteResponse(BaseModel):
@@ -835,7 +843,55 @@ class AwardQuoteResponse(BaseModel):
     taxes_currency: str | None
     cash_price_twd: str | None
     source: str
+    note: str | None
     created_at: str
+
+
+class TripQuestRunRequest(BaseModel):
+    origin: str
+    destination: str
+    programs: list[str]
+    window_start: date
+    window_end: date
+    trip_days: int
+    cabin: str
+    pax: int = 1
+
+
+class TripQuestResponse(BaseModel):
+    id: int
+    origin: str
+    destination: str
+    programs: list[str]
+    window_start: str
+    window_end: str
+    trip_days: int
+    cabin: str
+    pax: int
+    created_at: str
+
+
+class QuestResultResponse(BaseModel):
+    id: int
+    trip_quest_id: int
+    run_date: str
+    rank: int
+    program: str
+    outbound_date: str
+    return_date: str
+    outbound_miles: str
+    return_miles: str
+    total_miles: str
+    outbound_taxes: str | None
+    return_taxes: str | None
+    seats_min: int
+    raw_refs: str | None
+
+
+class TripQuestRunResponse(BaseModel):
+    quest: TripQuestResponse
+    results: list[QuestResultResponse]
+    created_results: int
 
 
 class AwardEvaluateRequest(BaseModel):
@@ -1803,6 +1859,7 @@ def post_wallet_award_quote(
             taxes_currency=request.taxes_currency,
             cash_price_twd=request.cash_price_twd,
             source=request.source,
+            note=request.note,
         )
     except PointWalletNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -1947,6 +2004,52 @@ def post_wallet_award_snapshot_promote(
     except PointWalletError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return {"award_quote": _award_quote_response(quote)}
+
+
+@app.get("/wallet/trip-quests", response_model=list[TripQuestResponse])
+def get_wallet_trip_quests(session: Session = Depends(get_session)) -> list[dict[str, Any]]:
+    return [_trip_quest_response(row) for row in list_trip_quests(session)]
+
+
+@app.post("/wallet/trip-quests/run", response_model=TripQuestRunResponse)
+def post_wallet_trip_quest_run(
+    request: TripQuestRunRequest,
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    try:
+        run = run_trip_quest(
+            session,
+            origin=request.origin,
+            destination=request.destination,
+            programs=request.programs,
+            window_start=request.window_start,
+            window_end=request.window_end,
+            trip_days=request.trip_days,
+            cabin=request.cabin,
+            pax=request.pax,
+        )
+    except PointWalletNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except TripQuestError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {
+        "quest": _trip_quest_response(run.quest),
+        "results": [_quest_result_response(row) for row in run.results],
+        "created_results": run.created_results,
+    }
+
+
+@app.get("/wallet/trip-quests/{quest_id}/results", response_model=list[QuestResultResponse])
+def get_wallet_trip_quest_results(
+    quest_id: int,
+    run_date: date | None = None,
+    session: Session = Depends(get_session),
+) -> list[dict[str, Any]]:
+    try:
+        get_trip_quest(session, quest_id)
+    except PointWalletNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return [_quest_result_response(row) for row in list_quest_results(session, quest_id=quest_id, run_date=run_date)]
 
 
 @app.get("/wallet/expiry-alerts", response_model=list[ExpiryAlertResponse])
@@ -2710,7 +2813,42 @@ def _award_quote_response(row) -> dict[str, Any]:
         "taxes_currency": row.taxes_currency,
         "cash_price_twd": str(row.cash_price_twd) if row.cash_price_twd is not None else None,
         "source": row.source,
+        "note": row.note,
         "created_at": row.created_at.isoformat(),
+    }
+
+
+def _trip_quest_response(row: TripQuest) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "origin": row.origin,
+        "destination": row.destination,
+        "programs": json.loads(row.programs),
+        "window_start": row.window_start.isoformat(),
+        "window_end": row.window_end.isoformat(),
+        "trip_days": row.trip_days,
+        "cabin": row.cabin,
+        "pax": row.pax,
+        "created_at": row.created_at.isoformat(),
+    }
+
+
+def _quest_result_response(row: QuestResult) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "trip_quest_id": row.trip_quest_id,
+        "run_date": row.run_date.isoformat(),
+        "rank": row.rank,
+        "program": row.program,
+        "outbound_date": row.outbound_date.isoformat(),
+        "return_date": row.return_date.isoformat(),
+        "outbound_miles": str(row.outbound_miles),
+        "return_miles": str(row.return_miles),
+        "total_miles": str(row.total_miles),
+        "outbound_taxes": row.outbound_taxes,
+        "return_taxes": row.return_taxes,
+        "seats_min": row.seats_min,
+        "raw_refs": row.raw_refs,
     }
 
 

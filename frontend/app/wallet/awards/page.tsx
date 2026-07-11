@@ -308,6 +308,7 @@ export default function WalletAwardsPage() {
             {quotes.length === 0 ? <option value="">目前沒有票券需求</option> : null}
             {quotes.map((quote) => <option key={quote.id} value={quote.id}>{quoteLabel(quote, programs, favoriteProgramIds)}</option>)}
           </select>
+          {selectedQuote?.note ? <small className="subtle">{selectedQuote.note}</small> : null}
         </section>
 
         <section className="panel">
