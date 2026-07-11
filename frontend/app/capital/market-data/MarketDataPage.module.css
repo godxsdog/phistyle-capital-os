@@ -57,8 +57,99 @@
   flex-wrap: wrap;
 }
 
+.marketTabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--line);
+}
+
+.marketTabs button {
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  padding: 10px 14px;
+  cursor: pointer;
+}
+
+.marketTabs .activeTab {
+  border-color: var(--accent);
+  color: var(--ink);
+}
+
+.quoteList {
+  display: grid;
+  margin-top: 16px;
+}
+
+.quoteRow {
+  display: grid;
+  grid-template-columns: 100px minmax(170px, 1fr) auto minmax(220px, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+  border-top: 1px solid var(--line);
+  padding: 14px 0;
+}
+
+.quoteIdentity,
+.latestData,
+.miniStats {
+  display: grid;
+  gap: 3px;
+}
+
+.quoteIdentity strong {
+  font-size: 21px;
+}
+
+.quoteIdentity span,
+.latestData span,
+.latestData small {
+  color: var(--muted);
+}
+
+.latestData strong,
+.miniStats strong {
+  font-variant-numeric: tabular-nums;
+}
+
+.changeBlock {
+  border-radius: 4px;
+  padding: 8px 10px;
+  font-size: 13px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.changeUp {
+  background: rgba(239, 68, 68, 0.14);
+  color: var(--gain);
+}
+
+.changeWarn {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.miniStats {
+  grid-template-columns: repeat(3, auto);
+  align-items: center;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
 @media (max-width: 700px) {
   .fieldRow {
     grid-template-columns: 1fr;
+  }
+
+  .quoteRow,
+  .miniStats {
+    grid-template-columns: 1fr;
+  }
+
+  .quoteRow {
+    align-items: start;
   }
 }

@@ -26,6 +26,7 @@ export default function CapitalMarketDataPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<"quotes" | "health">("quotes");
 
   useEffect(() => {
     void loadAll();
@@ -107,6 +108,12 @@ export default function CapitalMarketDataPage() {
           actions={<Link className="button" href="/capital/history">交易紀錄</Link>}
         />
 
+        <div className={styles.marketTabs} role="tablist" aria-label="市場資料分頁">
+          <button className={activeTab === "quotes" ? styles.activeTab : ""} type="button" onClick={() => setActiveTab("quotes")}>商品總覽</button>
+          <button className={activeTab === "health" ? styles.activeTab : ""} type="button" onClick={() => setActiveTab("health")}>資料健康</button>
+        </div>
+
+        {activeTab === "quotes" ? <>
         <section className="form-panel">
           <h2>美股觀察清單</h2>
           <div className={styles.fieldRow}>
@@ -117,7 +124,7 @@ export default function CapitalMarketDataPage() {
             <button className="button button-primary" type="button" onClick={addSymbol}>加入</button>
           </div>
           <p className="subtle">Yahoo 端點使用 10 年日 K；代號會以大寫儲存，抓取時直接送 Yahoo 原始 symbol。</p>
-          <WatchlistTable rows={watchlist} onToggle={toggleSymbol} onDelete={removeSymbol} />
+          <MarketQuoteList rows={watchlist} sanity={sanity} onToggle={toggleSymbol} onDelete={removeSymbol} />
         </section>
 
         <section className="panel">
@@ -135,6 +142,9 @@ export default function CapitalMarketDataPage() {
           {error ? <div className="notice notice-error">{error}</div> : null}
         </section>
 
+        </> : null}
+
+        {activeTab === "health" ? <>
         <section className="panel">
           <h2>資料健康</h2>
           <SanityTable rows={sanity} />
@@ -144,33 +154,45 @@ export default function CapitalMarketDataPage() {
           <h2>匯入紀錄</h2>
           <RunsTable rows={runs} />
         </section>
+        </> : null}
       </div>
     </main>
   );
 }
 
-function WatchlistTable({ rows, onToggle, onDelete }: { rows: MarketWatchlistSymbol[]; onToggle: (row: MarketWatchlistSymbol) => void; onDelete: (row: MarketWatchlistSymbol) => void }) {
+function MarketQuoteList({ rows, sanity, onToggle, onDelete }: { rows: MarketWatchlistSymbol[]; sanity: MarketSanityRow[]; onToggle: (row: MarketWatchlistSymbol) => void; onDelete: (row: MarketWatchlistSymbol) => void }) {
   if (rows.length === 0) return <p className="pending-text">尚未加入美股觀察清單</p>;
   return (
-    <div className={styles.tableWrap}>
-      <table className={styles.table}>
-        <thead><tr><th>市場</th><th>代號</th><th>狀態</th><th>操作</th></tr></thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={row.id}>
-              <td>{labelFor(MARKET_LABELS, row.market)}</td>
-              <td>{row.symbol}</td>
-              <td><StatusChip value={row.active ? "active" : "inactive"} /></td>
-              <td>
-                <div className={styles.rowActions}>
-                  <button className="button" type="button" onClick={() => onToggle(row)}>{row.active ? "停用" : "啟用"}</button>
-                  <button className="button button-danger" type="button" onClick={() => onDelete(row)}>刪除</button>
-                </div>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className={styles.quoteList}>
+      {rows.map((row) => {
+        const health = sanity.find((item) => item.market === row.market && item.symbol === row.symbol);
+        const healthy = Boolean(health && health.gap_count === 0);
+        return (
+          <article className={styles.quoteRow} key={row.id}>
+            <div className={styles.quoteIdentity}>
+              <strong>{row.symbol}</strong>
+              <span>{labelFor(MARKET_LABELS, row.market)}</span>
+            </div>
+            <div className={styles.latestData}>
+              <span>最新資料日</span>
+              <strong>{health?.last_date || "尚無資料"}</strong>
+              <small>目前 API 未提供即時收盤與漲跌幅</small>
+            </div>
+            <span className={`${styles.changeBlock} ${healthy ? styles.changeUp : styles.changeWarn}`}>
+              {healthy ? "資料完整" : health ? `${health.gap_count} 個缺口` : "待匯入"}
+            </span>
+            <div className={styles.miniStats}>
+              <span>筆數 <strong>{health?.row_count ?? 0}</strong></span>
+              <span>起始 <strong>{health?.first_date || "-"}</strong></span>
+              <StatusChip value={row.active ? "active" : "inactive"} />
+            </div>
+            <div className={styles.rowActions}>
+              <button className="button" type="button" onClick={() => onToggle(row)}>{row.active ? "停用" : "啟用"}</button>
+              <button className="button button-danger" type="button" onClick={() => onDelete(row)}>刪除</button>
+            </div>
+          </article>
+        );
+      })}
     </div>
   );
 }
