@@ -15,6 +15,9 @@
 .leg span, .leg small, .total span, .total small { color: var(--muted); }
 .leg strong, .total strong { font-size: 20px; font-variant-numeric: tabular-nums; }
 .total strong { color: var(--accent); font-size: 24px; }
+.total em { width: fit-content; border-radius: 4px; padding: 3px 6px; font-size: 11px; font-style: normal; font-weight: 800; }
+.verifiedBadge { background: rgba(20, 184, 166, 0.14); color: var(--accent); }
+.unverifiedBadge { background: var(--warning-soft); color: var(--warning); }
 .questHistory { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 @media (max-width: 800px) {
   .routeRow, .optionRow, .resultCard, .questHistory { grid-template-columns: 1fr; }

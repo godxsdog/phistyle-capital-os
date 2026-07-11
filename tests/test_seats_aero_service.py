@@ -17,9 +17,34 @@ from shared.services.seats_aero_service import (
     create_award_watch,
     fetch_award_watch,
     list_expiry_alerts,
+    normalize_cached_search_payload,
     promote_snapshot_to_award_quote,
     scan_expiry_alerts,
 )
+
+
+def test_cached_shape_maps_cabin_total_taxes_and_currency_to_major_units():
+    rows = normalize_cached_search_payload(
+        {
+            "data": [{
+                "ID": "redacted-availability",
+                "Date": "2026-09-05",
+                "Route": {"OriginAirport": "TPE", "DestinationAirport": "OKA"},
+                "Source": "alaska",
+                "YAvailable": True,
+                "YMileageCost": "7500",
+                "YRemainingSeats": 9,
+                "YTotalTaxes": 3560,
+                "TaxesCurrency": "USD",
+                "AvailabilityTrips": None,
+            }]
+        },
+        cabin="economy",
+    )
+
+    assert rows[0]["miles_required"] == "7500"
+    assert rows[0]["remaining_seats"] == 9
+    assert rows[0]["taxes"] == "35.60 USD"
 
 
 class MockSeatsClient:

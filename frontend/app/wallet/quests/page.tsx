@@ -201,12 +201,13 @@ export default function TripQuestPage() {
 }
 
 function ResultCard({ result, fxRates, promoted, onPromote }: { result: QuestResult; fxRates: FxRate[]; promoted: boolean; onPromote: () => void }) {
+  const verified = isBucketVerified(result.raw_refs);
   return <article className={`${styles.resultCard} ${result.rank === 1 ? styles.winner : ""}`}>
     {result.rank === 1 ? <div className={styles.winnerBand}>♛ 第一名</div> : null}
     <div className={styles.resultRank}>#{result.rank}</div>
     <div className={styles.leg}><span>去程 {result.outbound_date.replaceAll("-", "/")}</span><strong>{formatPoints(result.outbound_miles)} 哩</strong><small>{taxDisplay(result.outbound_taxes, fxRates)}</small></div>
     <div className={styles.leg}><span>回程 {result.return_date.replaceAll("-", "/")}</span><strong>{formatPoints(result.return_miles)} 哩</strong><small>{taxDisplay(result.return_taxes, fxRates)}</small></div>
-    <div className={styles.total}><span>{result.program}</span><strong>{formatPoints(result.total_miles)} 哩</strong><small>剩餘座位至少 {result.seats_min} 席</small></div>
+    <div className={styles.total}><span>{result.program}</span><strong>{formatPoints(result.total_miles)} 哩</strong><small>剩餘座位至少 {result.seats_min} 席</small><em className={verified ? styles.verifiedBadge : styles.unverifiedBadge}>{verified ? "已驗證桶價" : "⚠️未驗證桶價，訂前請核官網"}</em></div>
     <button className="button button-primary" disabled={promoted} onClick={onPromote} type="button">{promoted ? "已升格" : "升格為票券需求"}</button>
   </article>;
 }
@@ -229,3 +230,4 @@ function taxDisplay(value: string | null, rates: FxRate[]): string {
 function formatPoints(value: string): string { return Number(value).toLocaleString("zh-TW", { maximumFractionDigits: 0 }); }
 function slug(value: string): string { return value.toLowerCase().replace(/[\s_-]/g, ""); }
 function field(data: FormData, name: string): string { const value = data.get(name); return typeof value === "string" ? value : ""; }
+function isBucketVerified(value: string | null): boolean { try { return Boolean(value && (JSON.parse(value) as { bucket_verified?: boolean }).bucket_verified); } catch { return false; } }

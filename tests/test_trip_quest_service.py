@@ -1,4 +1,5 @@
 from datetime import date
+import json
 
 import pytest
 
@@ -18,6 +19,7 @@ from shared.services.trip_quest_service import pair_availability, run_trip_quest
 class MockQuestSeatsClient:
     def __init__(self) -> None:
         self.calls: list[tuple[str, str]] = []
+        self.trip_calls: list[str] = []
 
     def cached_search(self, **kwargs):
         self.calls.append((kwargs["origin"], kwargs["destination"]))
@@ -27,15 +29,24 @@ class MockQuestSeatsClient:
         rows = OUTBOUND_RAW if kwargs["origin"] == "TPE" else RETURN_RAW
         return {"data": rows}
 
+    def get_trips(self, *, availability_id, include_filtered=True):
+        self.trip_calls.append(availability_id)
+        values = {
+            "o1": ("10000", 2), "o2": ("8000", 1), "o3": ("12000", 3),
+            "r1": ("11000", 2), "r2": ("6000", 3), "r3": ("5000", 3),
+        }
+        miles, seats = values[availability_id]
+        return {"data": [{"ID": f"trip-{availability_id}", "Cabin": "economy", "MileageCost": miles, "RemainingSeats": seats, "TotalTaxes": 0, "TaxesCurrency": "USD"}]}
+
 
 OUTBOUND_RAW = [
-    {"ID": "o1", "Route": {"OriginAirport": "TPE", "DestinationAirport": "OKA"}, "Date": "2026-09-01", "YAvailable": True, "YMileageCost": "10000", "YRemainingSeats": 2, "Source": "Alaska", "YTaxes": {"Amount": "20", "Currency": "USD"}},
+    {"ID": "o1", "Route": {"OriginAirport": "TPE", "DestinationAirport": "OKA"}, "Date": "2026-09-01", "YAvailable": True, "YMileageCost": "10000", "YRemainingSeats": 2, "YTotalTaxes": 3560, "TaxesCurrency": "USD", "Source": "Alaska"},
     {"ID": "o2", "Route": {"OriginAirport": "TPE", "DestinationAirport": "OKA"}, "Date": "2026-09-02", "YAvailable": True, "YMileageCost": "8000", "YRemainingSeats": 1, "Source": "Alaska"},
     {"ID": "o3", "Route": {"OriginAirport": "TPE", "DestinationAirport": "OKA"}, "Date": "2026-09-03", "YAvailable": True, "YMileageCost": "12000", "YRemainingSeats": 3, "Source": "Alaska"},
 ]
 
 RETURN_RAW = [
-    {"ID": "r1", "Route": {"OriginAirport": "OKA", "DestinationAirport": "TPE"}, "Date": "2026-09-05", "YAvailable": True, "YMileageCost": "11000", "YRemainingSeats": 2, "Source": "Alaska", "YTaxes": "2500 JPY"},
+    {"ID": "r1", "Route": {"OriginAirport": "OKA", "DestinationAirport": "TPE"}, "Date": "2026-09-05", "YAvailable": True, "YMileageCost": "11000", "YRemainingSeats": 2, "YTotalTaxes": 2500, "TaxesCurrency": "JPY", "Source": "Alaska"},
     {"ID": "r2", "Route": {"OriginAirport": "OKA", "DestinationAirport": "TPE"}, "Date": "2026-09-07", "YAvailable": True, "YMileageCost": "6000", "YRemainingSeats": 3, "Source": "Alaska"},
     {"ID": "r3", "Route": {"OriginAirport": "OKA", "DestinationAirport": "TPE"}, "Date": "2026-09-06", "YAvailable": True, "YMileageCost": "5000", "YRemainingSeats": 3, "Source": "Aeroplan"},
 ]
@@ -90,12 +101,64 @@ def test_trip_quest_uses_two_cached_search_calls_and_reuses_same_day_snapshots()
     second = run_trip_quest(session, **kwargs)
 
     assert client.calls == [("TPE", "OKA"), ("OKA", "TPE")]
+    assert client.trip_calls == ["o3", "r2", "o1", "r1"]
     assert first.created_results == 2
     assert second.created_results == 0
     assert [row.id for row in second.results] == [row.id for row in first.results]
     assert first.results[0].rank == 1
     assert first.results[0].total_miles == 18000
-    assert first.results[1].outbound_taxes == "20 USD"
+    assert first.results[1].outbound_taxes == "0.00 USD"
+
+
+def test_bucket_detail_replaces_aggregate_price_and_keeps_bucket_taxes():
+    session = make_session()
+    create_program(session, name="Alaska", kind="airline")
+    client = BucketMismatchClient()
+    kwargs = {
+        "origin": "TPE", "destination": "OKA", "programs": ["Alaska"],
+        "window_start": date(2026, 9, 1), "window_end": date(2026, 9, 30),
+        "trip_days": 4, "cabin": "economy", "pax": 2,
+        "run_date": date(2026, 7, 12), "client": client,
+    }
+
+    first = run_trip_quest(session, **kwargs)
+    second = run_trip_quest(session, **kwargs)
+
+    assert len(first.results) == 1
+    assert first.results[0].outbound_miles == 10000
+    assert first.results[0].return_miles == 10000
+    assert first.results[0].outbound_taxes == "35.60 USD"
+    assert first.results[0].seats_min == 2
+    assert json.loads(first.results[0].raw_refs)["bucket_verified"] is True
+    assert second.created_results == 0
+    assert client.cached_calls == 2
+    assert client.trip_calls == ["aggregate-out", "aggregate-back"]
+
+
+class BucketMismatchClient:
+    def __init__(self):
+        self.cached_calls = 0
+        self.trip_calls = []
+
+    def cached_search(self, **kwargs):
+        self.cached_calls += 1
+        outbound = kwargs["origin"] == "TPE"
+        return {"data": [{
+            "ID": "aggregate-out" if outbound else "aggregate-back",
+            "Date": "2026-09-05" if outbound else "2026-09-09",
+            "Route": {"OriginAirport": kwargs["origin"], "DestinationAirport": kwargs["destination"]},
+            "Source": "alaska", "YAvailable": True, "YMileageCost": "7500" if outbound else "10000",
+            "YRemainingSeats": 9, "YTotalTaxes": 3560, "TaxesCurrency": "USD", "AvailabilityTrips": None,
+        }]}
+
+    def get_trips(self, *, availability_id, include_filtered=True):
+        self.trip_calls.append(availability_id)
+        if availability_id == "aggregate-out":
+            return {"data": [
+                {"ID": "bucket-cheap", "Cabin": "economy", "MileageCost": 7500, "RemainingSeats": 1, "TotalTaxes": 3560, "TaxesCurrency": "USD"},
+                {"ID": "bucket-valid", "Cabin": "economy", "MileageCost": 10000, "RemainingSeats": 2, "TotalTaxes": 3560, "TaxesCurrency": "USD"},
+            ]}
+        return {"data": [{"ID": "bucket-back", "Cabin": "economy", "MileageCost": 10000, "RemainingSeats": 2, "TotalTaxes": 3560, "TaxesCurrency": "USD"}]}
 
 
 def normalized(identifier: str, travel_date: str, miles: str, seats: int, program: str):

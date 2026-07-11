@@ -19,6 +19,7 @@ from shared.services.point_wallet_service import PointWalletError, PointWalletNo
 
 
 SEATS_AERO_SEARCH_URL = "https://seats.aero/partnerapi/search"
+SEATS_AERO_TRIPS_URL = "https://seats.aero/partnerapi/trips"
 EXPIRY_THRESHOLDS = (90, 60, 30, 7)
 CABIN_PREFIX = {
     "economy": "Y",
@@ -89,6 +90,32 @@ class SeatsAeroClient:
         except json.JSONDecodeError as exc:
             raise SeatsAeroError("seats.aero returned non-JSON response") from exc
 
+    def get_trips(self, *, availability_id: str, include_filtered: bool = True) -> dict[str, Any]:
+        if not self.api_key:
+            raise SeatsAeroError("SEATS_AERO_API_KEY is required for seats.aero fetch")
+        value = availability_id.strip()
+        if not value:
+            raise SeatsAeroError("availability_id is required for seats.aero trips fetch")
+        request = Request(
+            f"{SEATS_AERO_TRIPS_URL}/{value}?{urlencode({'include_filtered': str(include_filtered).lower()})}",
+            headers={
+                "Accept": "application/json",
+                "Partner-Authorization": self.api_key,
+                "User-Agent": "PhiStyle-Point-Wallet/1.0",
+            },
+            method="GET",
+        )
+        try:
+            with urlopen(request, timeout=self.timeout_seconds) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except HTTPError as exc:
+            detail = exc.read().decode("utf-8", "replace")[:300]
+            raise SeatsAeroError(f"seats.aero trips HTTP {exc.code}: {detail}") from exc
+        except URLError as exc:
+            raise SeatsAeroError(f"seats.aero trips network error: {exc.reason}") from exc
+        except json.JSONDecodeError as exc:
+            raise SeatsAeroError("seats.aero trips returned non-JSON response") from exc
+
 
 def create_award_watch(
     session: Session,
@@ -122,7 +149,13 @@ def create_award_watch(
 
 
 def list_award_watches(session: Session) -> list[AwardWatch]:
-    return list(session.scalars(select(AwardWatch).order_by(AwardWatch.active.desc(), AwardWatch.id.desc())))
+    return list(
+        session.scalars(
+            select(AwardWatch)
+            .where((AwardWatch.note.is_(None)) | (~AwardWatch.note.startswith("seats_trip_detail:")))
+            .order_by(AwardWatch.active.desc(), AwardWatch.id.desc())
+        )
+    )
 
 
 def update_award_watch(
@@ -165,7 +198,12 @@ def delete_award_watch(session: Session, *, watch_id: int) -> None:
 
 
 def list_award_snapshots(session: Session, *, watch_id: int | None = None) -> list[AwardSnapshot]:
-    statement = select(AwardSnapshot).order_by(AwardSnapshot.seen_date.desc(), AwardSnapshot.id.desc())
+    statement = (
+        select(AwardSnapshot)
+        .join(AwardWatch, AwardSnapshot.watch_id == AwardWatch.id)
+        .where((AwardWatch.note.is_(None)) | (~AwardWatch.note.startswith("seats_trip_detail:")))
+        .order_by(AwardSnapshot.seen_date.desc(), AwardSnapshot.id.desc())
+    )
     if watch_id is not None:
         statement = statement.where(AwardSnapshot.watch_id == watch_id)
     return list(session.scalars(statement))
@@ -368,7 +406,7 @@ def normalize_cached_search_payload(payload: dict[str, Any], *, cabin: str) -> l
                 "program_source": _string_or_none(item.get("Source")) or _string_or_none(route.get("Source")),
                 "miles_required": str(miles),
                 "remaining_seats": _parse_int(item.get(f"{prefix}RemainingSeats")),
-                "taxes": _normalize_taxes(item.get(f"{prefix}Taxes")),
+                "taxes": _normalize_tax_amount(item.get(f"{prefix}TotalTaxes"), item.get("TaxesCurrency")),
                 "airlines": _string_or_none(item.get(f"{prefix}Airlines")),
                 "direct": bool(item.get(f"{prefix}Direct")),
                 "updated_at": _string_or_none(item.get("UpdatedAt")),
@@ -454,17 +492,45 @@ def _parse_int(value: Any) -> int | None:
         return None
 
 
-def _normalize_taxes(value: Any) -> str | None:
-    if value is None:
+def normalize_trip_buckets(payload: dict[str, Any], *, cabin: str) -> list[dict[str, Any]]:
+    requested_cabin = normalize_cabin(cabin)
+    rows = payload.get("data") if isinstance(payload, dict) else None
+    if not isinstance(rows, list):
+        return []
+    normalized: list[dict[str, Any]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        try:
+            row_cabin = normalize_cabin(str(row.get("Cabin") or ""))
+        except SeatsAeroError:
+            continue
+        if row_cabin != requested_cabin:
+            continue
+        miles = _parse_decimal(row.get("MileageCost"))
+        seats = _parse_int(row.get("RemainingSeats"))
+        if miles is None or miles <= 0 or seats is None or seats < 1:
+            continue
+        normalized.append(
+            {
+                "trip_id": _string_or_none(row.get("ID")),
+                "cabin": requested_cabin,
+                "miles_required": str(miles),
+                "remaining_seats": seats,
+                "taxes": _normalize_tax_amount(row.get("TotalTaxes"), row.get("TaxesCurrency")),
+            }
+        )
+    return sorted(normalized, key=lambda row: (Decimal(row["miles_required"]), -int(row["remaining_seats"])))
+
+
+def _normalize_tax_amount(value: Any, currency: Any) -> str | None:
+    if value is None or not currency:
         return None
-    if isinstance(value, dict):
-        amount = value.get("Amount") or value.get("amount")
-        currency = value.get("Currency") or value.get("currency")
-        if amount is not None and currency:
-            return f"{amount} {str(currency).upper()}"
-        return json.dumps(value, ensure_ascii=False, sort_keys=True)
-    text = str(value).strip()
-    return text or None
+    amount = _parse_decimal(value)
+    if amount is None:
+        return None
+    major_units = amount / Decimal("100")
+    return f"{major_units.quantize(Decimal('0.01'))} {str(currency).strip().upper()}"
 
 
 def _parse_date(value: Any) -> date | None:

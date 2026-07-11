@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any, Iterable
@@ -11,7 +11,10 @@ from sqlalchemy.orm import Session
 
 from shared.models.point_wallet import AwardSnapshot, AwardWatch, PointProgram, QuestResult, TripQuest
 from shared.services.point_wallet_service import PointWalletError, PointWalletNotFoundError
-from shared.services.seats_aero_service import SeatsAeroClient, airport_code, create_award_watch, fetch_award_watch, normalize_cabin, seats_source_slug
+from shared.services.seats_aero_service import SeatsAeroClient, SeatsAeroError, airport_code, create_award_watch, fetch_award_watch, normalize_cabin, normalize_trip_buckets, seats_source_slug
+
+
+DETAIL_VERIFICATION_LIMIT = 10
 
 
 class TripQuestError(PointWalletError):
@@ -36,6 +39,7 @@ class PairedAvailability:
     return_taxes: str | None
     seats_min: int
     raw_refs: str
+    verified: bool = False
 
     @property
     def total_miles(self) -> Decimal:
@@ -108,7 +112,15 @@ def run_trip_quest(
     return_snapshot = _fetch_direction_snapshot(session, quest, "return", client, run_date)
     outbound = _snapshot_items(outbound_snapshot)
     returns = _snapshot_items(return_snapshot)
-    pairs = pair_availability(outbound, returns, programs=normalized_programs, trip_days=trip_days, pax=pax)
+    coarse_pairs = pair_availability(outbound, returns, programs=normalized_programs, trip_days=trip_days, pax=pax)
+    pairs = verify_pair_buckets(
+        session,
+        quest=quest,
+        pairs=coarse_pairs,
+        pax=pax,
+        run_date=run_date,
+        client=client or SeatsAeroClient(),
+    )
 
     rows: list[QuestResult] = []
     for rank, pair in enumerate(pairs, start=1):
@@ -174,6 +186,7 @@ def pair_availability(
                         {
                             "outbound": outbound_item.get("seats_aero_id"),
                             "return": return_item.get("seats_aero_id"),
+                            "bucket_verified": False,
                         },
                         ensure_ascii=False,
                         sort_keys=True,
@@ -181,6 +194,160 @@ def pair_availability(
                 )
             )
     return sorted(pairs, key=lambda pair: (pair.total_miles, pair.outbound_date))
+
+
+def verify_pair_buckets(
+    session: Session,
+    *,
+    quest: TripQuest,
+    pairs: list[PairedAvailability],
+    pax: int,
+    run_date: date,
+    client: SeatsAeroClient,
+) -> list[PairedAvailability]:
+    verified: list[PairedAvailability] = []
+    unverified: list[PairedAvailability] = []
+    local_cache: dict[str, list[dict[str, Any]] | None] = {}
+    for index, pair in enumerate(pairs):
+        if index >= DETAIL_VERIFICATION_LIMIT:
+            unverified.append(_mark_pair_verification(pair, False))
+            continue
+        refs = _raw_ref_data(pair.raw_refs)
+        outbound_id = str(refs.get("outbound") or "")
+        return_id = str(refs.get("return") or "")
+        if not outbound_id or not return_id:
+            unverified.append(_mark_pair_verification(pair, False))
+            continue
+        outbound_buckets = _cached_detail_buckets(
+            session,
+            availability_id=outbound_id,
+            origin=quest.origin,
+            destination=quest.destination,
+            cabin=quest.cabin,
+            travel_date=pair.outbound_date,
+            run_date=run_date,
+            client=client,
+            local_cache=local_cache,
+        )
+        return_buckets = _cached_detail_buckets(
+            session,
+            availability_id=return_id,
+            origin=quest.destination,
+            destination=quest.origin,
+            cabin=quest.cabin,
+            travel_date=pair.return_date,
+            run_date=run_date,
+            client=client,
+            local_cache=local_cache,
+        )
+        if outbound_buckets is None or return_buckets is None:
+            unverified.append(_mark_pair_verification(pair, False))
+            continue
+        outbound_bucket = _cheapest_eligible_bucket(outbound_buckets, pax)
+        return_bucket = _cheapest_eligible_bucket(return_buckets, pax)
+        if outbound_bucket is None or return_bucket is None:
+            continue
+        verified.append(
+            replace(
+                pair,
+                outbound_miles=Decimal(outbound_bucket["miles_required"]),
+                return_miles=Decimal(return_bucket["miles_required"]),
+                outbound_taxes=_optional_text(outbound_bucket.get("taxes")),
+                return_taxes=_optional_text(return_bucket.get("taxes")),
+                seats_min=min(int(outbound_bucket["remaining_seats"]), int(return_bucket["remaining_seats"])),
+                raw_refs=json.dumps(
+                    {
+                        **refs,
+                        "bucket_verified": True,
+                        "outbound_trip": outbound_bucket.get("trip_id"),
+                        "return_trip": return_bucket.get("trip_id"),
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                ),
+                verified=True,
+            )
+        )
+    return sorted(verified, key=lambda pair: (pair.total_miles, pair.outbound_date)) + sorted(
+        unverified,
+        key=lambda pair: (pair.total_miles, pair.outbound_date),
+    )
+
+
+def _cached_detail_buckets(
+    session: Session,
+    *,
+    availability_id: str,
+    origin: str,
+    destination: str,
+    cabin: str,
+    travel_date: date,
+    run_date: date,
+    client: SeatsAeroClient,
+    local_cache: dict[str, list[dict[str, Any]] | None],
+) -> list[dict[str, Any]] | None:
+    if availability_id in local_cache:
+        return local_cache[availability_id]
+    note = f"seats_trip_detail:{availability_id}"
+    watch = session.scalar(select(AwardWatch).where(AwardWatch.note == note).order_by(AwardWatch.id))
+    if watch is None:
+        watch = create_award_watch(
+            session,
+            origin=origin,
+            destination=destination,
+            cabin=cabin,
+            start_date=travel_date,
+            end_date=travel_date,
+            active=False,
+            note=note,
+        )
+    snapshot = session.scalar(
+        select(AwardSnapshot).where(AwardSnapshot.watch_id == watch.id, AwardSnapshot.seen_date == run_date)
+    )
+    if snapshot is not None:
+        buckets = _snapshot_items(snapshot)
+        local_cache[availability_id] = buckets
+        return buckets
+    try:
+        payload = client.get_trips(availability_id=availability_id, include_filtered=True)
+    except SeatsAeroError:
+        local_cache[availability_id] = None
+        return None
+    buckets = normalize_trip_buckets(payload, cabin=cabin)
+    snapshot = AwardSnapshot(
+        watch_id=watch.id,
+        seen_date=run_date,
+        status="detail_success",
+        result_count=len(buckets),
+        normalized_json=json.dumps(buckets, ensure_ascii=False, sort_keys=True),
+        raw_json=json.dumps(payload, ensure_ascii=False, sort_keys=True),
+        created_at=datetime.now(UTC),
+    )
+    session.add(snapshot)
+    session.commit()
+    local_cache[availability_id] = buckets
+    return buckets
+
+
+def _cheapest_eligible_bucket(buckets: list[dict[str, Any]], pax: int) -> dict[str, Any] | None:
+    eligible = [bucket for bucket in buckets if int(bucket.get("remaining_seats") or 0) >= pax]
+    if not eligible:
+        return None
+    return min(eligible, key=lambda bucket: Decimal(str(bucket["miles_required"])))
+
+
+def _mark_pair_verification(pair: PairedAvailability, verified: bool) -> PairedAvailability:
+    refs = _raw_ref_data(pair.raw_refs)
+    refs["bucket_verified"] = verified
+    return replace(pair, raw_refs=json.dumps(refs, ensure_ascii=False, sort_keys=True), verified=verified)
+
+
+def _raw_ref_data(value: str) -> dict[str, Any]:
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
 
 
 def list_trip_quests(session: Session) -> list[TripQuest]:
