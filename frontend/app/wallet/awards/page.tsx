@@ -216,8 +216,11 @@ export default function WalletAwardsPage() {
         {error ? <div className="notice notice-error">{error}</div> : null}
         {status ? <p className="subtle">{status}</p> : null}
 
-        <form className="panel" onSubmit={submitAndEvaluate}>
-          <h2>一行比價</h2>
+        <form className={`${styles.stickySearch} panel`} onSubmit={submitAndEvaluate}>
+          <div className={styles.searchHeading}>
+            <div><div className="section-kicker">票券需求</div><h2>快速比價</h2></div>
+            <span className="stage-pill">唯讀試算</span>
+          </div>
           <div className={styles.awardLine}>
             <span>我要</span>
             <select name="program_id" value={prefs.programId} onChange={(event) => setPrefs({ ...prefs, programId: event.target.value })} required>
@@ -307,47 +310,48 @@ export default function WalletAwardsPage() {
           </select>
         </section>
 
-        {winner ? (
-          <section className={styles.winnerPanel}>
-            <div>
-              <div className="section-kicker">第一名</div>
-              <h2>皇冠方案：{humanScenario(winner)}</h2>
-              <p>{winner.saving_vs_cash_twd ? `比現金票省 ${formatMoney(winner.saving_vs_cash_twd)}` : "這是目前成本最低的方案。"}</p>
-            </div>
-            <strong>{formatMoney(winner.total_cash_cost_twd)}</strong>
-          </section>
-        ) : null}
-
         <section className="panel">
-          <h2>成本情境排名</h2>
+          <div className={styles.sectionHeader}>
+            <div>
+              <h2>成本情境排名</h2>
+              <p className="subtle">由總現金成本排序；點一下方案即可查看轉點與成本批次明細。</p>
+            </div>
+            {selectedQuote ? <strong>{quoteRouteSummary(selectedQuote, programs)}</strong> : null}
+          </div>
           {scenarios.length === 0 ? (
             <p className="pending-text">目前沒有評估結果。</p>
           ) : (
-            <div className={styles.awardTable}>
-              <div className={styles.awardHead}>
-                <span>排名</span>
-                <span>方案</span>
-                <span>總成本</span>
-                <span>每點成本</span>
-                <span>剩餘點數</span>
-                <span>明細</span>
-              </div>
+            <div className={styles.flightResults}>
               {scenarios.map((scenario) => (
-                <article className={styles.awardRow} key={scenario.id}>
-                  <strong>{scenario.rank === 1 ? "皇冠 #1" : `#${scenario.rank}`}</strong>
-                  <span>{humanScenario(scenario)}</span>
-                  <span>{formatMoney(scenario.total_cash_cost_twd)}</span>
-                  <span>{costPerPoint(scenario.effective_cpp)}</span>
-                  <span>{formatNumber(scenario.points_leftover)}</span>
-                  <button className="button" type="button" onClick={() => setExpanded(expanded === scenario.id ? null : scenario.id)}>
-                    {expanded === scenario.id ? "收合" : "展開"}
-                  </button>
+                <article
+                  className={`${styles.flightResultCard} ${scenario.rank === 1 ? styles.bestFlightResult : ""}`}
+                  key={scenario.id}
+                  onClick={() => setExpanded(expanded === scenario.id ? null : scenario.id)}
+                >
+                  {scenario.rank === 1 ? <div className={styles.bestValueRibbon}>最划算</div> : null}
+                  <div className={styles.flightOptionMain}>
+                    <div className={styles.flightOptionIdentity}>
+                      <span className={styles.rankBadge}>#{scenario.rank}</span>
+                      <div>
+                        <h3>{humanScenario(scenario)}</h3>
+                        <p>{scenarioPathSummary(scenario)} · 剩餘 {formatNumber(scenario.points_leftover)} 點</p>
+                      </div>
+                    </div>
+                    <div className={styles.flightOptionPrice}>
+                      <strong>{formatMoney(scenario.total_cash_cost_twd)}</strong>
+                      <small>{costPerPoint(scenario.effective_cpp)}</small>
+                      {scenario.saving_vs_cash_twd ? <span>省下 {formatMoney(scenario.saving_vs_cash_twd)}</span> : null}
+                    </div>
+                  </div>
                   {expanded === scenario.id ? (
                     <div className={styles.awardDetail}>
                       {pathDetails(scenario.path_json).map((line) => <p className="subtle" key={line}>{line}</p>)}
                       {scenario.warnings ? <p className="subtle">提醒：{scenario.warnings}</p> : null}
                     </div>
                   ) : null}
+                  <button className={styles.expandResult} type="button">
+                    {expanded === scenario.id ? "收合明細" : "查看明細"}
+                  </button>
                 </article>
               ))}
             </div>
@@ -367,6 +371,28 @@ function quoteLabel(quote: AwardQuote, programs: Program[], favoriteProgramIds: 
   const program = programs.find((item) => item.id === quote.program_id);
   const programName = program ? programDisplayName(program, favoriteProgramIds) : "未命名計畫";
   return `${programName} · ${formatNumber(quote.miles_required)} 哩 · 稅金 ${quote.taxes_amount || 0} ${quote.taxes_currency || "TWD"}`;
+}
+
+function quoteRouteSummary(quote: AwardQuote, programs: Program[]): string {
+  const program = programs.find((item) => item.id === quote.program_id);
+  const route = quote.origin && quote.destination ? `${quote.origin} → ${quote.destination}` : program?.name || "票券需求";
+  return `${route} · ${formatNumber(quote.miles_required)} 哩`;
+}
+
+function scenarioPathSummary(scenario: FundingScenario): string {
+  try {
+    const path = JSON.parse(scenario.path_json) as Record<string, unknown>;
+    const hops = Array.isArray(path.hops) ? path.hops : [];
+    if (hops.length > 0) {
+      const names = hops.map((hop) => String((hop as Record<string, unknown>).to_program_name || "")).filter(Boolean);
+      return `轉點路徑 ${names.join(" → ")}`;
+    }
+    if (path.funding === "existing_points") return "使用現有點數";
+    if (path.funding === "same_day_source_purchase") return "當日買分後轉點";
+    return "直接完成兌換";
+  } catch {
+    return "成本路徑";
+  }
 }
 
 function humanScenario(scenario: FundingScenario): string {
