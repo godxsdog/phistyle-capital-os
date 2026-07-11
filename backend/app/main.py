@@ -2030,6 +2030,8 @@ def post_wallet_trip_quest_run(
         )
     except PointWalletNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except SeatsAeroError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except TripQuestError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return {

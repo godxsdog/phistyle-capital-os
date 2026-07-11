@@ -437,3 +437,26 @@ def test_trip_quest_run_route_uses_mocked_seats_and_is_idempotent(monkeypatch):
     assert second.status_code == 200
     assert second.json()["created_results"] == 0
     assert calls == [("TPE", "OKA"), ("OKA", "TPE")]
+
+
+def test_trip_quest_run_route_returns_clear_error_when_seats_key_is_missing(monkeypatch):
+    client = make_client()
+    client.post("/wallet/programs", json={"name": "Alaska", "kind": "airline"})
+    monkeypatch.delenv("SEATS_AERO_API_KEY", raising=False)
+
+    response = client.post(
+        "/wallet/trip-quests/run",
+        json={
+            "origin": "TPE",
+            "destination": "OKA",
+            "programs": ["Alaska"],
+            "window_start": "2026-09-01",
+            "window_end": "2026-09-30",
+            "trip_days": 4,
+            "cabin": "economy",
+            "pax": 2,
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json() == {"detail": "SEATS_AERO_API_KEY is required for seats.aero fetch"}
