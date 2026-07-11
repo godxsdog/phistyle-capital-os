@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { PageHeader } from "../../../components/ui";
+import { KpiCard, PageHeader } from "../../../components/ui";
 import {
   BacktestRun,
   BacktestTrade,
@@ -167,13 +167,16 @@ function ResultPanel({ run }: { run: BacktestRun | null }) {
           <h2>回測結果</h2>
           <span className="stage-pill">run_hash 冪等：{run.run_hash.slice(0, 12)}</span>
         </div>
-        <div className={styles.metrics}>
-          <Metric label="交易數" value={String(full.metrics.trade_count)} />
-          <Metric label="淨損益" value={`${full.metrics.net_pnl} ${full.trades[0]?.currency ?? ""}`} />
-          <Metric label="勝率" value={`${(full.metrics.win_rate * 100).toFixed(1)}%`} />
-          <Metric label="期望值" value={full.metrics.expectancy} />
-          <Metric label="最大回撤" value={full.metrics.max_drawdown} />
-          <Metric label="曝險天數" value={String(full.metrics.exposure_days)} />
+        <div className={styles.strategyMetrics}>
+          <KpiCard label="淨利" value={`${full.metrics.net_pnl} ${full.trades[0]?.currency ?? ""}`} tone={Number(full.metrics.net_pnl) >= 0 ? "gain" : "loss"} note="扣除費用、稅與滑價" />
+          <KpiCard label="勝率" value={`${(full.metrics.win_rate * 100).toFixed(1)}%`} tone="accent" note={`${full.metrics.trade_count} 筆交易`} />
+          <KpiCard label="最大回撤" value={full.metrics.max_drawdown} tone="loss" note="完整樣本區間" />
+          <KpiCard label="期望值" value={full.metrics.expectancy} tone={Number(full.metrics.expectancy) >= 0 ? "gain" : "loss"} note={`曝險 ${full.metrics.exposure_days} 天`} />
+        </div>
+        <div className={styles.resultTabs} role="tablist" aria-label="策略測試結果">
+          <span className={styles.activeResultTab}>績效摘要</span>
+          <span>交易分析</span>
+          <span>樣本切分</span>
         </div>
         <div className={styles.metaBlock}>
           <p>{run.results.cost_disclaimer || "費率為預設值"}</p>
@@ -194,15 +197,6 @@ function ResultPanel({ run }: { run: BacktestRun | null }) {
         <WindowTable label="樣本外" result={run.results.out_of_sample} />
       </section>
     </>
-  );
-}
-
-function Metric({ label, value }: { label: string; value: string }) {
-  return (
-    <div className={styles.metric}>
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </div>
   );
 }
 

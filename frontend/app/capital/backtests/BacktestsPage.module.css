@@ -62,10 +62,10 @@
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent), transparent 76%);
 }
 
-.metrics {
+.strategyMetrics {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
 }
 
 .metric {
@@ -78,6 +78,24 @@
 .metric span,
 .metric strong {
   display: block;
+}
+
+.resultTabs {
+  display: flex;
+  gap: 18px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+.resultTabs span {
+  border-bottom: 2px solid transparent;
+  padding: 10px 2px;
+}
+
+.resultTabs .activeResultTab {
+  border-color: var(--accent);
+  color: var(--ink);
 }
 
 .metric span {
@@ -145,7 +163,7 @@
 @media (max-width: 900px) {
   .layout,
   .noteGrid,
-  .metrics,
+  .strategyMetrics,
   .windowRow {
     grid-template-columns: 1fr;
   }
