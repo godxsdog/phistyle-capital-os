@@ -437,6 +437,115 @@ dt {
   background: rgba(15, 23, 42, 0.35);
 }
 
+.broker-list {
+  gap: 0;
+}
+
+.broker-row {
+  display: grid;
+  grid-template-columns: 64px minmax(180px, 1fr) auto auto 18px;
+  gap: 14px;
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
+  padding: 13px 4px;
+  text-decoration: none;
+}
+
+.broker-row:hover {
+  background: rgba(20, 184, 166, 0.06);
+}
+
+.broker-symbol {
+  font-size: 17px;
+  font-weight: 850;
+}
+
+.broker-main {
+  display: grid;
+  gap: 4px;
+}
+
+.broker-main small,
+.broker-chevron {
+  color: var(--muted);
+}
+
+.direction-chip {
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.direction-long {
+  background: rgba(239, 68, 68, 0.14);
+  color: var(--gain);
+}
+
+.direction-short {
+  background: rgba(34, 197, 94, 0.14);
+  color: var(--loss);
+}
+
+.decision-progress {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  margin: 0;
+  padding: 18px 10px;
+  list-style: none;
+}
+
+.decision-progress li {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.decision-progress li::before,
+.decision-progress li::after {
+  position: absolute;
+  top: 8px;
+  height: 2px;
+  width: 50%;
+  background: var(--line);
+  content: "";
+}
+
+.decision-progress li::before { left: 0; }
+.decision-progress li::after { right: 0; }
+.decision-progress li:first-child::before,
+.decision-progress li:last-child::after { display: none; }
+
+.decision-progress li > span {
+  z-index: 1;
+  width: 18px;
+  height: 18px;
+  border: 3px solid var(--panel);
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.decision-progress .progress-completed > span,
+.decision-progress .progress-approved > span { background: var(--accent); }
+.decision-progress .progress-rejected > span { background: var(--danger); }
+.decision-progress .progress-completed,
+.decision-progress .progress-approved { color: var(--ink); }
+
+.decision-stage-cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.decision-stage-cards .stage:last-child {
+  grid-column: 1 / -1;
+}
+
 .empty-state,
 .form-panel,
 .timeline,
@@ -722,8 +831,29 @@ dd {
   .data-grid,
   .app-grid,
   .overview-grid,
-  .feature-grid {
+  .feature-grid,
+  .decision-stage-cards {
     grid-template-columns: 1fr;
+  }
+
+  .decision-stage-cards .stage:last-child {
+    grid-column: auto;
+  }
+
+  .broker-row {
+    grid-template-columns: 52px minmax(0, 1fr) auto;
+    gap: 8px;
+  }
+
+  .broker-row .direction-chip,
+  .broker-row .status-chip {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .broker-chevron {
+    grid-column: 3;
+    grid-row: 1 / span 2;
   }
 }
 

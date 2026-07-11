@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { DataTable, EmptyState, PageHeader, StatusChip } from "../../../components/ui";
+import { EmptyState, PageHeader, StatusChip } from "../../../components/ui";
 import { CapitalDecisionListItem, listCapitalDecisions } from "../../../lib/capitalApi";
 import { RISK_LABELS, formatDateZh, labelFor } from "../../../lib/displayConstants";
 
@@ -68,21 +68,21 @@ export default function CapitalDecisionsPage() {
             actionLabel="新增決策"
           />
         ) : (
-          <section className="panel" aria-label="交易決策列表">
-            <DataTable
-              columns={["編號", "問題", "風險", "狀態", "建立者", "建立日期", "操作"]}
-              rows={decisions.map((decision) => [
-                `#${decision.id}`,
-                decision.question,
-                labelFor(RISK_LABELS, decision.risk_level),
-                <StatusChip key={decision.id} value={decision.status} />,
-                decision.created_by || "未設定",
-                formatDateZh(decision.created_at),
-                <Link key={`link-${decision.id}`} className="button" href={`/capital/decisions/${decision.id}`}>
-                  開啟
-                </Link>,
-              ])}
-            />
+          <section className="panel broker-list" aria-label="交易決策列表">
+            {decisions.map((decision) => (
+              <Link className="broker-row" href={`/capital/decisions/${decision.id}`} key={decision.id}>
+                <span className="broker-symbol">#{decision.id}</span>
+                <span className="broker-main">
+                  <strong>{decision.question}</strong>
+                  <small>{decision.created_by || "未設定"} · {formatDateZh(decision.created_at)}</small>
+                </span>
+                <span className={`direction-chip direction-${decision.risk_level === "high" ? "short" : "long"}`}>
+                  {labelFor(RISK_LABELS, decision.risk_level)}風險
+                </span>
+                <StatusChip value={decision.status} />
+                <span className="broker-chevron">›</span>
+              </Link>
+            ))}
           </section>
         )}
       </div>

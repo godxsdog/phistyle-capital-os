@@ -48,8 +48,50 @@
   font-weight: 760;
 }
 
+.planList {
+  display: grid;
+  gap: 8px;
+}
+
+.planRow {
+  display: grid;
+  grid-template-columns: 100px auto minmax(240px, 1fr) minmax(120px, auto) auto;
+  gap: 14px;
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  padding: 12px 0;
+}
+
+.planIdentity,
+.planNumbers,
+.ok,
+.warn {
+  display: grid;
+  gap: 3px;
+}
+
+.planIdentity strong {
+  font-size: 20px;
+}
+
+.planIdentity small,
+.ok small,
+.warn small {
+  color: var(--muted);
+}
+
+.planNumbers {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  font-variant-numeric: tabular-nums;
+}
+
 @media (max-width: 760px) {
   .grid {
+    grid-template-columns: 1fr;
+  }
+
+  .planRow,
+  .planNumbers {
     grid-template-columns: 1fr;
   }
 }

@@ -144,7 +144,9 @@ export default function CapitalDecisionDetailPage() {
 
             {error ? <div className="notice notice-error" role="alert">{error}</div> : null}
 
-            <section className="timeline" aria-label="Capital 決策階段">
+            <DecisionProgress summary={summary} />
+
+            <section className="decision-stage-cards" aria-label="Capital 決策階段明細">
               <Stage title="決策請求" state={stageForDecisionRequest(summary.decision_request.status)}>
                 <DataGrid
                   items={[
@@ -219,6 +221,26 @@ export default function CapitalDecisionDetailPage() {
         ) : null}
       </div>
     </main>
+  );
+}
+
+function DecisionProgress({ summary }: { summary: CapitalDecisionSummary }) {
+  const stages = [
+    { label: "建立", state: stageForDecisionRequest(summary.decision_request.status) },
+    { label: "分析", state: summary.triage_result ? "completed" as const : "pending" as const },
+    { label: "審查", state: summary.brain_review ? "completed" as const : "pending" as const },
+    { label: "核准", state: stageForDecisionLog(summary.decision_log?.status) },
+    { label: "結案", state: stageForHumanReview(summary) },
+  ];
+  return (
+    <ol className="decision-progress" aria-label="決策進度">
+      {stages.map((stage) => (
+        <li className={`progress-${stage.state}`} key={stage.label}>
+          <span aria-hidden="true" />
+          <strong>{stage.label}</strong>
+        </li>
+      ))}
+    </ol>
   );
 }
 

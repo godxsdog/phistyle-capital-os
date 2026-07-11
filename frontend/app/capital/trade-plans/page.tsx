@@ -151,22 +151,30 @@ export default function TradePlansPage() {
 function PlansTable({ plans, closeInputs, setCloseInputs, closePlan }: { plans: TradePlan[]; closeInputs: Record<number, string>; setCloseInputs: (value: Record<number, string>) => void; closePlan: (plan: TradePlan) => void }) {
   if (plans.length === 0) return <p className="pending-text">尚無交易計畫</p>;
   return (
-    <div className={styles.tableWrap}>
-      <table className={styles.table}>
-        <thead><tr><th>編號</th><th>標的</th><th>計畫</th><th>風控</th><th>決策</th><th>手動結案</th></tr></thead>
-        <tbody>
-          {plans.map((plan) => (
-            <tr key={plan.id}>
-              <td>#{plan.id}</td>
-              <td>{labelFor(MARKET_LABELS, plan.market)} {plan.symbol}</td>
-              <td>{labelFor(DIRECTION_LABELS, plan.direction)} / 進 {plan.planned_entry} / 停 {plan.stop_price} / 量 {plan.quantity}</td>
-              <td className={plan.risk_check.passed ? styles.ok : styles.warn}>{plan.risk_check.passed ? "通過" : "需高風險審查"}<br />風險 {plan.risk_check.risk_amount} {plan.risk_check.risk_currency}</td>
-              <td><Link className="button" href={`/capital/decisions/${plan.decision_request_id}`}>開啟審查</Link></td>
-              <td><div className={styles.actions}><input value={closeInputs[plan.id] || ""} onChange={(event) => setCloseInputs({ ...closeInputs, [plan.id]: event.target.value })} placeholder="出場價" /><button className="button" type="button" onClick={() => closePlan(plan)}>結案</button></div></td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className={styles.planList}>
+      {plans.map((plan) => (
+        <article className={styles.planRow} key={plan.id}>
+          <div className={styles.planIdentity}>
+            <strong>{plan.symbol}</strong>
+            <small>#{plan.id} · {labelFor(MARKET_LABELS, plan.market)}</small>
+          </div>
+          <span className={`direction-chip direction-${plan.direction}`}>{labelFor(DIRECTION_LABELS, plan.direction)}</span>
+          <div className={styles.planNumbers}>
+            <span>進場 <strong>{plan.planned_entry}</strong></span>
+            <span>停損 <strong>{plan.stop_price}</strong></span>
+            <span>數量 <strong>{plan.quantity}</strong></span>
+          </div>
+          <div className={plan.risk_check.passed ? styles.ok : styles.warn}>
+            {plan.risk_check.passed ? "風控通過" : "需人工審查"}
+            <small>風險 {plan.risk_check.risk_amount} {plan.risk_check.risk_currency}</small>
+          </div>
+          <div className={styles.actions}>
+            <Link className="button" href={`/capital/decisions/${plan.decision_request_id}`}>審查</Link>
+            <input value={closeInputs[plan.id] || ""} onChange={(event) => setCloseInputs({ ...closeInputs, [plan.id]: event.target.value })} placeholder="出場價" />
+            <button className="button" type="button" onClick={() => closePlan(plan)}>結案</button>
+          </div>
+        </article>
+      ))}
     </div>
   );
 }
