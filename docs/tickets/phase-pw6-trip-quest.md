@@ -33,6 +33,17 @@ DEPENDS: PW-3 ACCEPTED(已)。PRE-START Sonnet review:本工單
   同日 = 冪等重用;跨日重跑 = 新結果集(可用性會變)。
 - 可選 DeepSeek 敘事摘要:Phase 15 呼叫模式,失敗靜默省略。
 
+## AMENDMENT r1(Fable 2026-07-10,採 Codex STOP 選項 1)
+
+F1 同一個 migration 內,award_quotes 加 note Text NULL
+  (純 additive;禁區條款語義釐清:禁的是重構既有欄位/約束,
+  nullable 附加欄比照 Phase 15 先例允許,此釐清適用於未來工單)。
+F2 POST /wallet/award-quotes request 與 response 同步加 optional
+  note;/wallet/awards 列表顯示 note(有值才顯示,小字)。
+  既有呼叫零影響(欄位可選)。
+F3 升格寫入 note 格式:「旅程尋票 #<quest_result_id> 去程」/
+  「…回程」。
+
 ## 5/7. SCOPE + SCHEMA(一個 additive migration,id ≤32)
 
 trip_quests: id PK; origin/destination Text NOT NULL; programs
