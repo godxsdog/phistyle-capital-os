@@ -43,8 +43,60 @@
   text-transform: uppercase;
 }
 
+.monthGroups {
+  display: grid;
+  gap: 10px;
+}
+
+.monthGroup {
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.monthGroup summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+  padding: 14px 16px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.monthGroup summary::-webkit-details-marker {
+  display: none;
+}
+
+.monthGroup summary > span:first-child {
+  display: grid;
+  gap: 3px;
+}
+
+.monthGroup summary small {
+  color: var(--muted);
+}
+
+.monthSubtotal {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.monthGroup :global(.table-scroll) {
+  border-top: 1px solid var(--line);
+}
+
+.monthGroup :global(.data-table) th:nth-child(n + 3),
+.monthGroup :global(.data-table) td:nth-child(n + 3) {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
 @media (max-width: 760px) {
   .historyGrid {
     grid-template-columns: 1fr;
+  }
+
+  .monthGroup summary {
+    align-items: flex-start;
   }
 }

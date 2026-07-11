@@ -198,23 +198,57 @@ function BatchPanel({ batches }: { batches: ImportBatch[] }) {
 }
 
 function RealizedTradesPanel({ trades }: { trades: RealizedTrade[] }) {
+  const groups = groupTradesByMonth(trades);
   return (
     <section className="panel">
-      <h2>已實現交易</h2>
-      <DataTable
-        columns={["標的", "方向", "數量", "進場均價", "出場均價", "總損益", "平倉時間"]}
-        rows={trades.map((trade) => [
-          trade.symbol,
-          labelFor(DIRECTION_LABELS, trade.direction),
-          trade.quantity,
-          trade.avg_entry,
-          trade.avg_exit,
-          <PnlValue key={`${trade.id}-trade-pnl`} value={trade.gross_pnl} suffix={trade.currency} />,
-          trade.closed_at ? formatDateTimeZh(trade.closed_at) : "未知",
-        ])}
-      />
+      <div className="stage-header"><h2>已實現交易</h2><span className="stage-pill">券商對帳單</span></div>
+      {groups.length === 0 ? <p className="pending-text">目前沒有已實現交易。</p> : null}
+      <div className={styles.monthGroups}>
+        {groups.map((group, index) => (
+          <details className={styles.monthGroup} key={group.month} open={index === 0}>
+            <summary>
+              <span><strong>{monthLabel(group.month)}</strong><small>{group.trades.length} 筆交易</small></span>
+              <span className={styles.monthSubtotal}>小計 <PnlValue value={String(group.subtotal)} suffix={group.currency} /></span>
+            </summary>
+            <DataTable
+              columns={["標的", "方向", "數量", "進場均價", "出場均價", "總損益", "平倉時間"]}
+              rows={group.trades.map((trade) => [
+                <strong key={`${trade.id}-symbol`}>{trade.symbol}</strong>,
+                labelFor(DIRECTION_LABELS, trade.direction),
+                trade.quantity,
+                trade.avg_entry,
+                trade.avg_exit,
+                <PnlValue key={`${trade.id}-trade-pnl`} value={trade.gross_pnl} suffix={trade.currency} />,
+                trade.closed_at ? formatDateTimeZh(trade.closed_at) : "未知",
+              ])}
+            />
+          </details>
+        ))}
+      </div>
     </section>
   );
+}
+
+function groupTradesByMonth(trades: RealizedTrade[]) {
+  const groups = new Map<string, RealizedTrade[]>();
+  for (const trade of trades) {
+    const month = trade.closed_at ? trade.closed_at.slice(0, 7) : "unknown";
+    groups.set(month, [...(groups.get(month) || []), trade]);
+  }
+  return [...groups.entries()]
+    .sort(([left], [right]) => right.localeCompare(left))
+    .map(([month, monthTrades]) => ({
+      month,
+      trades: monthTrades,
+      subtotal: monthTrades.reduce((sum, trade) => sum + Number(trade.gross_pnl || 0), 0),
+      currency: monthTrades[0]?.currency || "",
+    }));
+}
+
+function monthLabel(month: string): string {
+  if (month === "unknown") return "日期未知";
+  const [year, value] = month.split("-");
+  return `${year} 年 ${Number(value)} 月`;
 }
 
 function DataGrid({ items }: { items: Array<[string, string]> }) {
