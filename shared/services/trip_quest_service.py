@@ -4,6 +4,7 @@ import json
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+from itertools import product
 from typing import Any, Iterable
 
 from sqlalchemy import select
@@ -15,6 +16,7 @@ from shared.services.seats_aero_service import SeatsAeroClient, SeatsAeroError, 
 
 
 DETAIL_VERIFICATION_LIMIT = 10
+MIN_CONNECTION_MINUTES = 120
 
 
 class TripQuestError(PointWalletError):
@@ -52,6 +54,7 @@ class ChainAvailability:
     travel_date: date
     segments: tuple[dict[str, Any], ...]
     verified: bool = False
+    connection_status: str = "unverified"
 
     @property
     def total_miles(self) -> Decimal:
@@ -240,6 +243,7 @@ def run_chain_quest(
         last = candidate.segments[-1]
         refs = {
             "bucket_verified": candidate.verified,
+            "connection_status": candidate.connection_status,
             "segments": [
                 {"availability_id": segment.get("availability_id"), "trip_id": segment.get("trip_id")}
                 for segment in candidate.segments
@@ -326,13 +330,14 @@ def verify_chain_buckets(
 ) -> list[ChainAvailability]:
     verified: list[ChainAvailability] = []
     unverified: list[ChainAvailability] = []
+    unconnectable: list[ChainAvailability] = []
     local_cache: dict[str, list[dict[str, Any]] | None] = {}
     quest_segments = json.loads(quest.segments_json or "[]")
     for index, candidate in enumerate(candidates):
         if index >= DETAIL_VERIFICATION_LIMIT:
             unverified.append(candidate)
             continue
-        detail_segments: list[dict[str, Any]] = []
+        segment_bucket_sets: list[list[dict[str, Any]]] = []
         detail_failed = False
         ineligible = False
         for segment_index, coarse_segment in enumerate(candidate.segments):
@@ -352,10 +357,25 @@ def verify_chain_buckets(
             if buckets is None:
                 detail_failed = True
                 break
-            bucket = _cheapest_eligible_bucket(buckets, pax)
-            if bucket is None:
+            eligible_buckets = _eligible_buckets(buckets, pax)
+            if not eligible_buckets:
                 ineligible = True
                 break
+            segment_bucket_sets.append(eligible_buckets)
+        if ineligible:
+            continue
+        if detail_failed:
+            unverified.append(replace(candidate, connection_status="unverified"))
+            continue
+        combination = _cheapest_connectable_combination(segment_bucket_sets)
+        if combination is None:
+            unconnectable.append(replace(candidate, connection_status="unconnectable"))
+            continue
+        detail_segments: list[dict[str, Any]] = []
+        for segment_index, (coarse_segment, bucket) in enumerate(zip(candidate.segments, combination, strict=True)):
+            connection_minutes = None
+            if segment_index < len(combination) - 1:
+                connection_minutes = _connection_minutes(bucket.get("arrives_at"), combination[segment_index + 1].get("departs_at"))
             detail_segments.append(
                 {
                     **coarse_segment,
@@ -363,16 +383,18 @@ def verify_chain_buckets(
                     "miles_required": bucket["miles_required"],
                     "remaining_seats": bucket["remaining_seats"],
                     "taxes": bucket.get("taxes"),
+                    "departs_at": bucket.get("departs_at"),
+                    "arrives_at": bucket.get("arrives_at"),
+                    "flight_numbers": bucket.get("flight_numbers"),
+                    "connection_minutes": connection_minutes,
                 }
             )
-        if ineligible:
-            continue
-        if detail_failed:
-            unverified.append(candidate)
-            continue
-        verified.append(replace(candidate, segments=tuple(detail_segments), verified=True))
+        verified.append(replace(candidate, segments=tuple(detail_segments), verified=True, connection_status="connected"))
     return sorted(verified, key=lambda candidate: (candidate.total_miles, candidate.travel_date)) + sorted(
         unverified,
+        key=lambda candidate: (candidate.total_miles, candidate.travel_date),
+    ) + sorted(
+        unconnectable,
         key=lambda candidate: (candidate.total_miles, candidate.travel_date),
     )
 
@@ -538,7 +560,12 @@ def _cached_detail_buckets(
         select(AwardSnapshot).where(AwardSnapshot.watch_id == watch.id, AwardSnapshot.seen_date == run_date)
     )
     if snapshot is not None:
-        buckets = _snapshot_items(snapshot)
+        try:
+            raw_payload = json.loads(snapshot.raw_json)
+        except (TypeError, json.JSONDecodeError):
+            buckets = _snapshot_items(snapshot)
+        else:
+            buckets = normalize_trip_buckets(raw_payload, cabin=cabin)
         local_cache[availability_id] = buckets
         return buckets
     try:
@@ -563,10 +590,46 @@ def _cached_detail_buckets(
 
 
 def _cheapest_eligible_bucket(buckets: list[dict[str, Any]], pax: int) -> dict[str, Any] | None:
-    eligible = [bucket for bucket in buckets if int(bucket.get("remaining_seats") or 0) >= pax]
+    eligible = _eligible_buckets(buckets, pax)
     if not eligible:
         return None
     return min(eligible, key=lambda bucket: Decimal(str(bucket["miles_required"])))
+
+
+def _eligible_buckets(buckets: list[dict[str, Any]], pax: int) -> list[dict[str, Any]]:
+    return [bucket for bucket in buckets if int(bucket.get("remaining_seats") or 0) >= pax]
+
+
+def _cheapest_connectable_combination(
+    segment_bucket_sets: list[list[dict[str, Any]]],
+) -> tuple[dict[str, Any], ...] | None:
+    connectable: list[tuple[dict[str, Any], ...]] = []
+    for combination in product(*segment_bucket_sets):
+        if all(
+            (minutes := _connection_minutes(current.get("arrives_at"), following.get("departs_at"))) is not None
+            and minutes >= MIN_CONNECTION_MINUTES
+            for current, following in zip(combination, combination[1:])
+        ):
+            connectable.append(combination)
+    if not connectable:
+        return None
+    return min(
+        connectable,
+        key=lambda combination: (
+            sum((Decimal(str(bucket["miles_required"])) for bucket in combination), Decimal("0")),
+            tuple(str(bucket.get("departs_at") or "") for bucket in combination),
+            tuple(str(bucket.get("trip_id") or "") for bucket in combination),
+        ),
+    )
+
+
+def _connection_minutes(arrives_at: Any, departs_at: Any) -> int | None:
+    try:
+        arrival = datetime.fromisoformat(str(arrives_at).replace("Z", "+00:00"))
+        departure = datetime.fromisoformat(str(departs_at).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    return int((departure - arrival).total_seconds() // 60)
 
 
 def _mark_pair_verification(pair: PairedAvailability, verified: bool) -> PairedAvailability:

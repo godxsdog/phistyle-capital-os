@@ -213,7 +213,7 @@ export default function TripQuestPage() {
             <button className="button" disabled={prefs.segments.length <= 2} type="button" onClick={() => setPrefs({ ...prefs, segments: prefs.segments.filter((_, itemIndex) => itemIndex !== index) })}>−</button>
           </div>)}
           <button className="button" disabled={prefs.segments.length >= 3} type="button" onClick={() => setPrefs({ ...prefs, segments: [...prefs.segments, { origin: prefs.segments[prefs.segments.length - 1].destination, destination: "" }] })}>＋新增航段</button>
-          <p className="subtle">同日即視為可接；實際轉機時間與機場請自行確認。</p>
+          <p className="subtle">已驗證結果會檢查至少 120 分鐘轉機時間；機場與實際行程仍請於訂票前確認。</p>
         </div>}
         <div className={styles.dateRow}>
           <label><span>開始日期</span><input name="window_start" type="date" required /></label>
@@ -236,7 +236,7 @@ export default function TripQuestPage() {
 
       <section className="panel">
         <div className="stage-header"><div><h2>尋票結果</h2>{activeQuest ? <p className="subtle">{questRouteLabel(activeQuest)} · {activeQuest.window_start}～{activeQuest.window_end}</p> : null}</div><span className="stage-pill">總哩程優先</span></div>
-        {results.length === 0 ? <p className="pending-text">尚無配對結果。輸入條件後開始尋票。</p> : <div className={styles.resultList}>{results.map((result) => <ResultCard key={result.id} result={result} quest={activeQuest} fxRates={fxRates} promoted={promotedIds.includes(result.id)} onPromote={() => void promote(result)} />)}</div>}
+        {results.length === 0 ? <p className="pending-text">尚無配對結果。輸入條件後開始尋票。</p> : <ResultGroups results={results} quest={activeQuest} fxRates={fxRates} promotedIds={promotedIds} onPromote={(result) => void promote(result)} />}
       </section>
 
       <section className="panel"><h2>過往查詢</h2><div className={styles.questHistory}>{quests.map((quest) => <button className="button" key={quest.id} type="button" onClick={() => void openQuest(quest)}>#{quest.id} {questRouteLabel(quest)} · {quest.window_start}～{quest.window_end}</button>)}{quests.length === 0 ? <p className="pending-text">尚無查詢紀錄。</p> : null}</div></section>
@@ -244,18 +244,33 @@ export default function TripQuestPage() {
   );
 }
 
+function ResultGroups({ results, quest, fxRates, promotedIds, onPromote }: { results: QuestResult[]; quest: TripQuest | null; fxRates: FxRate[]; promotedIds: number[]; onPromote: (result: QuestResult) => void }) {
+  const renderRows = (rows: QuestResult[]) => <div className={styles.resultList}>{rows.map((result) => <ResultCard key={result.id} result={result} quest={quest} fxRates={fxRates} promoted={promotedIds.includes(result.id)} onPromote={() => onPromote(result)} />)}</div>;
+  if (quest?.kind !== "chain") return renderRows(results);
+  const connected = results.filter((result) => connectionStatus(result.raw_refs) === "connected");
+  const unverified = results.filter((result) => connectionStatus(result.raw_refs) === "unverified");
+  const unconnectable = results.filter((result) => !["connected", "unverified"].includes(connectionStatus(result.raw_refs)));
+  return <div className={styles.resultGroups}>
+    <section><h3>可接駁主榜</h3>{connected.length ? renderRows(connected) : <p className="pending-text">目前沒有通過 120 分鐘轉機檢查的組合。</p>}</section>
+    {unverified.length ? <section><h3>桶價或時刻未驗證</h3>{renderRows(unverified)}</section> : null}
+    {unconnectable.length ? <section><h3>同日但無法確認接駁</h3>{renderRows(unconnectable)}</section> : null}
+  </div>;
+}
+
 function ResultCard({ result, quest, fxRates, promoted, onPromote }: { result: QuestResult; quest: TripQuest | null; fxRates: FxRate[]; promoted: boolean; onPromote: () => void }) {
-  const verified = isBucketVerified(result.raw_refs);
+  const status = quest?.kind === "chain" ? connectionStatus(result.raw_refs) : isBucketVerified(result.raw_refs) ? "connected" : "unverified";
+  const verified = status === "connected";
   const segments = parseSegments(result.segments_json);
-  return <article className={`${styles.resultCard} ${result.rank === 1 ? styles.winner : ""}`}>
-    {result.rank === 1 ? <div className={styles.winnerBand}>♛ 第一名</div> : null}
+  const winner = verified && result.rank === 1;
+  return <article className={`${styles.resultCard} ${winner ? styles.winner : ""}`}>
+    {winner ? <div className={styles.winnerBand}>♛ 第一名</div> : null}
     {quest?.kind === "chain" ? <div className={styles.resultDate}>{formatQuestDate(segments[0]?.date ?? result.outbound_date)}</div> : null}
     <div className={styles.resultRank}>#{result.rank}</div>
-    {quest?.kind === "chain" ? <div className={styles.chainLegs}>{segments.map((segment, index) => <div className={styles.leg} key={`${segment.origin}-${segment.destination}-${index}`}><span>第 {index + 1} 段 {segment.origin} → {segment.destination}</span><strong>{formatPoints(segment.miles_required)} 哩</strong><small>{taxDisplay(segment.taxes, fxRates)}</small></div>)}</div> : <>
+    {quest?.kind === "chain" ? <div className={styles.chainLegs}>{segments.map((segment, index) => <div className={styles.leg} key={`${segment.origin}-${segment.destination}-${index}`}><span>第 {index + 1} 段 {segment.origin} → {segment.destination}</span><strong>{formatPoints(segment.miles_required)} 哩</strong>{segment.departs_at && segment.arrives_at ? <small>{segment.flight_numbers ? `${segment.flight_numbers} · ` : ""}{formatFlightTime(segment.departs_at)} → {formatFlightTime(segment.arrives_at)}</small> : null}{segment.connection_minutes !== null && segment.connection_minutes !== undefined ? <small>轉機 {formatConnectionTime(segment.connection_minutes)}</small> : null}<small>{taxDisplay(segment.taxes, fxRates)}</small></div>)}</div> : <>
       <div className={styles.leg}><span>去程 {result.outbound_date.replaceAll("-", "/")}</span><strong>{formatPoints(result.outbound_miles)} 哩</strong><small>{taxDisplay(result.outbound_taxes, fxRates)}</small></div>
       <div className={styles.leg}><span>回程 {result.return_date.replaceAll("-", "/")}</span><strong>{formatPoints(result.return_miles)} 哩</strong><small>{taxDisplay(result.return_taxes, fxRates)}</small></div>
     </>}
-    <div className={styles.total}><span>{result.program}</span><strong>{formatPoints(result.total_miles)} 哩</strong><small>剩餘座位至少 {result.seats_min} 席</small><em className={verified ? styles.verifiedBadge : styles.unverifiedBadge}>{verified ? "已驗證桶價" : "⚠️未驗證桶價，訂前請核官網"}</em></div>
+    <div className={styles.total}><span>{result.program}</span><strong>{formatPoints(result.total_miles)} 哩</strong><small>剩餘座位至少 {result.seats_min} 席</small><em className={verified ? styles.verifiedBadge : styles.unverifiedBadge}>{status === "connected" ? "已驗證可接" : status === "unverified" ? "⚠️未驗證桶價，訂前請核官網" : "⚠️同日但時刻未能銜接/未驗證"}</em></div>
     <button className="button button-primary" disabled={promoted} onClick={onPromote} type="button">{promoted ? "已升格" : "升格為票券需求"}</button>
   </article>;
 }
@@ -285,7 +300,10 @@ function formatQuestDate(value: string): string {
 function slug(value: string): string { return value.toLowerCase().replace(/[\s_-]/g, ""); }
 function field(data: FormData, name: string): string { const value = data.get(name); return typeof value === "string" ? value : ""; }
 function isBucketVerified(value: string | null): boolean { try { return Boolean(value && (JSON.parse(value) as { bucket_verified?: boolean }).bucket_verified); } catch { return false; } }
-type ResultSegment = { origin: string; destination: string; date: string; miles_required: string; remaining_seats: number; taxes: string | null };
+function connectionStatus(value: string | null): string { try { const parsed = value ? JSON.parse(value) as { connection_status?: string; bucket_verified?: boolean } : {}; return parsed.connection_status || (parsed.bucket_verified ? "legacy_unchecked" : "unverified"); } catch { return "unverified"; } }
+type ResultSegment = { origin: string; destination: string; date: string; miles_required: string; remaining_seats: number; taxes: string | null; departs_at?: string | null; arrives_at?: string | null; flight_numbers?: string | null; connection_minutes?: number | null };
 function parseSegments(value: string | null): ResultSegment[] { try { const rows = value ? JSON.parse(value) : []; return Array.isArray(rows) ? rows as ResultSegment[] : []; } catch { return []; } }
+function formatFlightTime(value: string): string { const match = value.match(/T(\d{2}:\d{2})/); return match?.[1] || value; }
+function formatConnectionTime(minutes: number): string { const hours = Math.floor(minutes / 60); const rest = minutes % 60; return `${hours ? `${hours} 小時` : ""}${rest ? ` ${rest} 分鐘` : ""}`.trim(); }
 function questRouteLabel(quest: TripQuest): string { return quest.kind === "chain" && quest.segments ? quest.segments.map((segment) => segment.origin).concat(quest.segments[quest.segments.length - 1].destination).join(" → ") : `${quest.origin} ⇄ ${quest.destination}`; }
 function updateSegment(index: number, key: "origin" | "destination", value: string, prefs: QuestPrefs, setPrefs: (value: QuestPrefs) => void) { setPrefs({ ...prefs, segments: prefs.segments.map((segment, itemIndex) => itemIndex === index ? { ...segment, [key]: value } : segment) }); }

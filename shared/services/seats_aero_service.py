@@ -518,6 +518,9 @@ def normalize_trip_buckets(payload: dict[str, Any], *, cabin: str) -> list[dict[
                 "miles_required": str(miles),
                 "remaining_seats": seats,
                 "taxes": _normalize_tax_amount(row.get("TotalTaxes"), row.get("TaxesCurrency")),
+                "departs_at": _string_or_none(row.get("DepartsAt")),
+                "arrives_at": _string_or_none(row.get("ArrivesAt")),
+                "flight_numbers": _string_or_none(row.get("FlightNumbers")),
             }
         )
     return sorted(normalized, key=lambda row: (Decimal(row["miles_required"]), -int(row["remaining_seats"])))
