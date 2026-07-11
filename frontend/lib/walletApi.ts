@@ -127,6 +127,8 @@ export type TripQuest = {
   trip_days: number;
   cabin: string;
   pax: number;
+  kind: "round_trip" | "chain" | string;
+  segments: Array<{ origin: string; destination: string }> | null;
   created_at: string;
 };
 
@@ -145,6 +147,7 @@ export type QuestResult = {
   return_taxes: string | null;
   seats_min: number;
   raw_refs: string | null;
+  segments_json: string | null;
 };
 
 export type TripQuestRunResponse = {
@@ -458,6 +461,8 @@ export async function runTripQuest(payload: {
   trip_days: number;
   cabin: string;
   pax: number;
+  kind?: "round_trip" | "chain";
+  segments?: Array<{ origin: string; destination: string }>;
 }): Promise<TripQuestRunResponse> {
   return requestJson<TripQuestRunResponse>("/wallet/trip-quests/run", { method: "POST", body: JSON.stringify(payload) });
 }

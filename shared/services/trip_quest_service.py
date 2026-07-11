@@ -46,6 +46,22 @@ class PairedAvailability:
         return self.outbound_miles + self.return_miles
 
 
+@dataclass(frozen=True)
+class ChainAvailability:
+    program: str
+    travel_date: date
+    segments: tuple[dict[str, Any], ...]
+    verified: bool = False
+
+    @property
+    def total_miles(self) -> Decimal:
+        return sum((Decimal(str(segment["miles_required"])) for segment in self.segments), Decimal("0"))
+
+    @property
+    def seats_min(self) -> int:
+        return min(int(segment["remaining_seats"]) for segment in self.segments)
+
+
 def run_trip_quest(
     session: Session,
     *,
@@ -86,6 +102,7 @@ def run_trip_quest(
             TripQuest.trip_days == trip_days,
             TripQuest.cabin == normalized_cabin,
             TripQuest.pax == pax,
+            TripQuest.kind == "round_trip",
         )
         .order_by(TripQuest.id)
     )
@@ -99,6 +116,8 @@ def run_trip_quest(
             trip_days=trip_days,
             cabin=normalized_cabin,
             pax=pax,
+            kind="round_trip",
+            segments_json=None,
             created_at=datetime.now(UTC),
         )
         session.add(quest)
@@ -143,6 +162,219 @@ def run_trip_quest(
         rows.append(row)
     session.commit()
     return TripQuestRun(quest=quest, results=tuple(rows), created_results=len(rows))
+
+
+def run_chain_quest(
+    session: Session,
+    *,
+    segments: list[dict[str, str]],
+    programs: list[str],
+    window_start: date,
+    window_end: date,
+    cabin: str,
+    pax: int = 1,
+    run_date: date | None = None,
+    client: SeatsAeroClient | None = None,
+) -> TripQuestRun:
+    normalized_segments = _normalize_segments(segments)
+    if window_end < window_start:
+        raise TripQuestError("日期窗結束日不可早於開始日")
+    if pax < 1:
+        raise TripQuestError("人數至少為 1 人")
+    normalized_cabin = normalize_cabin(cabin)
+    normalized_programs = _normalize_programs(session, programs)
+    programs_json = json.dumps(normalized_programs, ensure_ascii=False, separators=(",", ":"))
+    segments_json = json.dumps(normalized_segments, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+    run_date = run_date or date.today()
+    quest = session.scalar(
+        select(TripQuest)
+        .where(
+            TripQuest.origin == normalized_segments[0]["origin"],
+            TripQuest.destination == normalized_segments[-1]["destination"],
+            TripQuest.programs == programs_json,
+            TripQuest.window_start == window_start,
+            TripQuest.window_end == window_end,
+            TripQuest.trip_days == 1,
+            TripQuest.cabin == normalized_cabin,
+            TripQuest.pax == pax,
+            TripQuest.kind == "chain",
+            TripQuest.segments_json == segments_json,
+        )
+        .order_by(TripQuest.id)
+    )
+    if quest is None:
+        quest = TripQuest(
+            origin=normalized_segments[0]["origin"],
+            destination=normalized_segments[-1]["destination"],
+            programs=programs_json,
+            window_start=window_start,
+            window_end=window_end,
+            trip_days=1,
+            cabin=normalized_cabin,
+            pax=pax,
+            kind="chain",
+            segments_json=segments_json,
+            created_at=datetime.now(UTC),
+        )
+        session.add(quest)
+        session.commit()
+    existing = list_quest_results(session, quest_id=quest.id, run_date=run_date)
+    if existing:
+        return TripQuestRun(quest=quest, results=tuple(existing), created_results=0)
+    segment_rows: list[list[dict[str, Any]]] = []
+    for index, segment in enumerate(normalized_segments):
+        snapshot = _fetch_chain_segment_snapshot(session, quest, index, segment, client, run_date)
+        segment_rows.append(_snapshot_items(snapshot))
+    coarse = pair_chain_availability(segment_rows, programs=normalized_programs, pax=pax)
+    candidates = verify_chain_buckets(
+        session,
+        quest=quest,
+        candidates=coarse,
+        pax=pax,
+        run_date=run_date,
+        client=client or SeatsAeroClient(),
+    )
+    rows: list[QuestResult] = []
+    for rank, candidate in enumerate(candidates, start=1):
+        first = candidate.segments[0]
+        last = candidate.segments[-1]
+        refs = {
+            "bucket_verified": candidate.verified,
+            "segments": [
+                {"availability_id": segment.get("availability_id"), "trip_id": segment.get("trip_id")}
+                for segment in candidate.segments
+            ],
+        }
+        row = QuestResult(
+            trip_quest_id=quest.id,
+            run_date=run_date,
+            rank=rank,
+            program=candidate.program,
+            outbound_date=candidate.travel_date,
+            return_date=candidate.travel_date,
+            outbound_miles=Decimal(str(first["miles_required"])),
+            return_miles=Decimal(str(last["miles_required"])),
+            total_miles=candidate.total_miles,
+            outbound_taxes=_optional_text(first.get("taxes")),
+            return_taxes=_optional_text(last.get("taxes")),
+            seats_min=candidate.seats_min,
+            raw_refs=json.dumps(refs, ensure_ascii=False, sort_keys=True),
+            segments_json=json.dumps(candidate.segments, ensure_ascii=False, sort_keys=True),
+        )
+        session.add(row)
+        rows.append(row)
+    session.commit()
+    return TripQuestRun(quest=quest, results=tuple(rows), created_results=len(rows))
+
+
+def pair_chain_availability(
+    segment_rows: list[list[dict[str, Any]]],
+    *,
+    programs: list[str],
+    pax: int,
+) -> list[ChainAvailability]:
+    allowed = {seats_source_slug(program) for program in programs}
+    by_segment: list[dict[tuple[date, str], dict[str, Any]]] = []
+    for rows in segment_rows:
+        choices: dict[tuple[date, str], dict[str, Any]] = {}
+        for row in rows:
+            program = str(row.get("program_source") or "").strip()
+            program_slug = seats_source_slug(program)
+            seats = _required_seats(row.get("remaining_seats"))
+            if program_slug not in allowed or seats < pax:
+                continue
+            travel_date = _required_date(row.get("travel_date"))
+            key = (travel_date, program_slug)
+            candidate = {
+                "availability_id": row.get("seats_aero_id"),
+                "origin": row.get("origin"),
+                "destination": row.get("destination"),
+                "date": travel_date.isoformat(),
+                "program": program,
+                "miles_required": str(_required_miles(row.get("miles_required"))),
+                "remaining_seats": seats,
+                "taxes": _optional_text(row.get("taxes")),
+            }
+            current = choices.get(key)
+            if current is None or Decimal(candidate["miles_required"]) < Decimal(current["miles_required"]):
+                choices[key] = candidate
+        by_segment.append(choices)
+    if not by_segment:
+        return []
+    common_keys = set(by_segment[0])
+    for choices in by_segment[1:]:
+        common_keys &= set(choices)
+    candidates = [
+        ChainAvailability(
+            program=by_segment[0][key]["program"],
+            travel_date=key[0],
+            segments=tuple(choices[key] for choices in by_segment),
+        )
+        for key in common_keys
+    ]
+    return sorted(candidates, key=lambda candidate: (candidate.total_miles, candidate.travel_date))
+
+
+def verify_chain_buckets(
+    session: Session,
+    *,
+    quest: TripQuest,
+    candidates: list[ChainAvailability],
+    pax: int,
+    run_date: date,
+    client: SeatsAeroClient,
+) -> list[ChainAvailability]:
+    verified: list[ChainAvailability] = []
+    unverified: list[ChainAvailability] = []
+    local_cache: dict[str, list[dict[str, Any]] | None] = {}
+    quest_segments = json.loads(quest.segments_json or "[]")
+    for index, candidate in enumerate(candidates):
+        if index >= DETAIL_VERIFICATION_LIMIT:
+            unverified.append(candidate)
+            continue
+        detail_segments: list[dict[str, Any]] = []
+        detail_failed = False
+        ineligible = False
+        for segment_index, coarse_segment in enumerate(candidate.segments):
+            availability_id = str(coarse_segment.get("availability_id") or "")
+            route = quest_segments[segment_index]
+            buckets = _cached_detail_buckets(
+                session,
+                availability_id=availability_id,
+                origin=route["origin"],
+                destination=route["destination"],
+                cabin=quest.cabin,
+                travel_date=candidate.travel_date,
+                run_date=run_date,
+                client=client,
+                local_cache=local_cache,
+            )
+            if buckets is None:
+                detail_failed = True
+                break
+            bucket = _cheapest_eligible_bucket(buckets, pax)
+            if bucket is None:
+                ineligible = True
+                break
+            detail_segments.append(
+                {
+                    **coarse_segment,
+                    "trip_id": bucket.get("trip_id"),
+                    "miles_required": bucket["miles_required"],
+                    "remaining_seats": bucket["remaining_seats"],
+                    "taxes": bucket.get("taxes"),
+                }
+            )
+        if ineligible:
+            continue
+        if detail_failed:
+            unverified.append(candidate)
+            continue
+        verified.append(replace(candidate, segments=tuple(detail_segments), verified=True))
+    return sorted(verified, key=lambda candidate: (candidate.total_miles, candidate.travel_date)) + sorted(
+        unverified,
+        key=lambda candidate: (candidate.total_miles, candidate.travel_date),
+    )
 
 
 def pair_availability(
@@ -387,6 +619,19 @@ def _normalize_programs(session: Session, programs: list[str]) -> list[str]:
     return sorted(matched, key=seats_source_slug)
 
 
+def _normalize_segments(segments: list[dict[str, str]]) -> list[dict[str, str]]:
+    if len(segments) < 2 or len(segments) > 3:
+        raise TripQuestError("多段同日模式只支援 2 至 3 段")
+    normalized: list[dict[str, str]] = []
+    for segment in segments:
+        origin = airport_code(str(segment.get("origin") or ""))
+        destination = airport_code(str(segment.get("destination") or ""))
+        if origin == destination:
+            raise TripQuestError("每段出發地與目的地不可相同")
+        normalized.append({"origin": origin, "destination": destination})
+    return normalized
+
+
 def _fetch_direction_snapshot(
     session: Session,
     quest: TripQuest,
@@ -402,6 +647,29 @@ def _fetch_direction_snapshot(
             session,
             origin=quest.origin if outbound else quest.destination,
             destination=quest.destination if outbound else quest.origin,
+            cabin=quest.cabin,
+            start_date=quest.window_start,
+            end_date=quest.window_end,
+            note=note,
+        )
+    return fetch_award_watch(session, watch_id=watch.id, client=client, seen_date=run_date).snapshot
+
+
+def _fetch_chain_segment_snapshot(
+    session: Session,
+    quest: TripQuest,
+    index: int,
+    segment: dict[str, str],
+    client: SeatsAeroClient | None,
+    run_date: date,
+) -> AwardSnapshot:
+    note = f"trip_quest:{quest.id}:segment:{index + 1}"
+    watch = session.scalar(select(AwardWatch).where(AwardWatch.note == note).order_by(AwardWatch.id))
+    if watch is None:
+        watch = create_award_watch(
+            session,
+            origin=segment["origin"],
+            destination=segment["destination"],
             cabin=quest.cabin,
             start_date=quest.window_start,
             end_date=quest.window_end,

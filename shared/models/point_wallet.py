@@ -212,6 +212,8 @@ class TripQuest(Base):
     trip_days: Mapped[int] = mapped_column(Integer, nullable=False)
     cabin: Mapped[str] = mapped_column(Text, nullable=False)
     pax: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    kind: Mapped[str] = mapped_column(Text, nullable=False, default="round_trip")
+    segments_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(nullable=False, default=lambda: datetime.now(UTC))
 
 
@@ -233,6 +235,7 @@ class QuestResult(Base):
     return_taxes: Mapped[str | None] = mapped_column(Text, nullable=True)
     seats_min: Mapped[int] = mapped_column(Integer, nullable=False)
     raw_refs: Mapped[str | None] = mapped_column(Text, nullable=True)
+    segments_json: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     trip_quest: Mapped[TripQuest] = relationship()
 

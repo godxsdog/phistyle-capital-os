@@ -138,6 +138,7 @@ from shared.services.trip_quest_service import (
     get_trip_quest,
     list_quest_results,
     list_trip_quests,
+    run_chain_quest,
     run_trip_quest,
 )
 from shared.services.decision_request_service import (
@@ -847,6 +848,11 @@ class AwardQuoteResponse(BaseModel):
     created_at: str
 
 
+class TripQuestSegmentRequest(BaseModel):
+    origin: str
+    destination: str
+
+
 class TripQuestRunRequest(BaseModel):
     origin: str
     destination: str
@@ -856,6 +862,8 @@ class TripQuestRunRequest(BaseModel):
     trip_days: int
     cabin: str
     pax: int = 1
+    kind: str = "round_trip"
+    segments: list[TripQuestSegmentRequest] | None = None
 
 
 class TripQuestResponse(BaseModel):
@@ -868,6 +876,8 @@ class TripQuestResponse(BaseModel):
     trip_days: int
     cabin: str
     pax: int
+    kind: str
+    segments: list[dict[str, str]] | None
     created_at: str
 
 
@@ -886,6 +896,7 @@ class QuestResultResponse(BaseModel):
     return_taxes: str | None
     seats_min: int
     raw_refs: str | None
+    segments_json: str | None
 
 
 class TripQuestRunResponse(BaseModel):
@@ -2017,17 +2028,30 @@ def post_wallet_trip_quest_run(
     session: Session = Depends(get_session),
 ) -> dict[str, Any]:
     try:
-        run = run_trip_quest(
-            session,
-            origin=request.origin,
-            destination=request.destination,
-            programs=request.programs,
-            window_start=request.window_start,
-            window_end=request.window_end,
-            trip_days=request.trip_days,
-            cabin=request.cabin,
-            pax=request.pax,
-        )
+        if request.kind == "chain":
+            run = run_chain_quest(
+                session,
+                segments=[segment.model_dump() for segment in request.segments or []],
+                programs=request.programs,
+                window_start=request.window_start,
+                window_end=request.window_end,
+                cabin=request.cabin,
+                pax=request.pax,
+            )
+        elif request.kind == "round_trip":
+            run = run_trip_quest(
+                session,
+                origin=request.origin,
+                destination=request.destination,
+                programs=request.programs,
+                window_start=request.window_start,
+                window_end=request.window_end,
+                trip_days=request.trip_days,
+                cabin=request.cabin,
+                pax=request.pax,
+            )
+        else:
+            raise TripQuestError("kind 必須是 round_trip 或 chain")
     except PointWalletNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except SeatsAeroError as exc:
@@ -2831,6 +2855,8 @@ def _trip_quest_response(row: TripQuest) -> dict[str, Any]:
         "trip_days": row.trip_days,
         "cabin": row.cabin,
         "pax": row.pax,
+        "kind": row.kind,
+        "segments": json.loads(row.segments_json) if row.segments_json else None,
         "created_at": row.created_at.isoformat(),
     }
 
@@ -2851,6 +2877,7 @@ def _quest_result_response(row: QuestResult) -> dict[str, Any]:
         "return_taxes": row.return_taxes,
         "seats_min": row.seats_min,
         "raw_refs": row.raw_refs,
+        "segments_json": row.segments_json,
     }
 
 

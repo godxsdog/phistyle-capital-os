@@ -1,4 +1,5 @@
 from datetime import date
+import json
 
 import pytest
 
@@ -460,3 +461,58 @@ def test_trip_quest_run_route_returns_clear_error_when_seats_key_is_missing(monk
 
     assert response.status_code == 422
     assert response.json() == {"detail": "SEATS_AERO_API_KEY is required for seats.aero fetch"}
+
+
+def test_chain_trip_quest_route_returns_segment_details(monkeypatch):
+    client = make_client()
+    client.post("/wallet/programs", json={"name": "United", "kind": "airline"})
+
+    def fake_search(self, **kwargs):
+        identifier = "first" if kwargs["origin"] == "TPE" else "second"
+        return {"data": [{
+            "ID": identifier,
+            "Date": "2026-11-01",
+            "Route": {"OriginAirport": kwargs["origin"], "DestinationAirport": kwargs["destination"]},
+            "Source": "united",
+            "JAvailable": True,
+            "JMileageCost": "20000",
+            "JRemainingSeats": 2,
+            "JTotalTaxes": 3560,
+            "TaxesCurrency": "USD",
+        }]}
+
+    def fake_trips(self, *, availability_id, include_filtered=True):
+        return {"data": [{
+            "ID": f"trip-{availability_id}",
+            "Cabin": "business",
+            "MileageCost": 20000,
+            "RemainingSeats": 2,
+            "TotalTaxes": 3560,
+            "TaxesCurrency": "USD",
+        }]}
+
+    monkeypatch.setattr("shared.services.seats_aero_service.SeatsAeroClient.cached_search", fake_search)
+    monkeypatch.setattr("shared.services.seats_aero_service.SeatsAeroClient.get_trips", fake_trips)
+    response = client.post(
+        "/wallet/trip-quests/run",
+        json={
+            "origin": "TPE",
+            "destination": "MLE",
+            "programs": ["United"],
+            "window_start": "2026-11-01",
+            "window_end": "2026-11-05",
+            "trip_days": 1,
+            "cabin": "business",
+            "pax": 2,
+            "kind": "chain",
+            "segments": [
+                {"origin": "TPE", "destination": "SIN"},
+                {"origin": "SIN", "destination": "MLE"},
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["quest"]["kind"] == "chain"
+    assert response.json()["quest"]["segments"][1]["destination"] == "MLE"
+    assert len(json.loads(response.json()["results"][0]["segments_json"])) == 2
