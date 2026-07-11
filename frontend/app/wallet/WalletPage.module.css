@@ -464,6 +464,58 @@
   cursor: pointer;
 }
 
+.hotelOptionList {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.hotelOptionCard {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, auto);
+  gap: 20px;
+  align-items: center;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  padding: 18px;
+}
+
+.recommendedHotelOption {
+  border: 2px solid var(--accent);
+  box-shadow: inset 4px 0 0 var(--accent);
+}
+
+.hotelOptionIdentity,
+.hotelOptionPrice {
+  display: grid;
+  gap: 5px;
+}
+
+.hotelOptionIdentity h3,
+.hotelOptionIdentity p {
+  margin: 0;
+}
+
+.hotelOptionPrice {
+  justify-items: end;
+  text-align: right;
+}
+
+.hotelOptionPrice span,
+.hotelOptionPrice small {
+  color: var(--muted);
+}
+
+.hotelOptionPrice strong {
+  font-size: 28px;
+  font-variant-numeric: tabular-nums;
+}
+
+.recommendedHotelOption .hotelOptionPrice strong,
+.recommendedHotelOption .hotelOptionPrice small {
+  color: var(--accent);
+}
+
 .alertList,
 .watchList {
   display: grid;
@@ -563,6 +615,17 @@
 
   .flightOptionPrice {
     justify-items: start;
+    text-align: left;
+  }
+
+  .hotelOptionCard {
+    grid-template-columns: 1fr;
+  }
+
+  .hotelOptionPrice {
+    justify-items: start;
+    border-top: 1px solid var(--line);
+    padding-top: 12px;
     text-align: left;
   }
 

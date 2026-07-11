@@ -201,7 +201,7 @@ export default function WalletHotelsPage() {
 
             <section className="panel">
               <h2>四種支付方式</h2>
-              <div className={styles.sourceGrid}>
+              <div className={styles.hotelOptionList}>
                 {evaluation.options.map((option) => (
                   <OptionCard key={option.method} option={option} />
                 ))}
@@ -221,13 +221,20 @@ export default function WalletHotelsPage() {
 }
 
 function OptionCard({ option }: { option: HotelStayOption }) {
+  const recommended = option.rank === 1;
   return (
-    <article className={styles.sourceCard}>
-      <div className="section-kicker">{option.rank ? `#${option.rank}` : "不列入排名"}</div>
-      <h3>{option.label}</h3>
-      <p>{option.available ? formatMoney(option.cash_cost_twd) : "不可用"}</p>
-      <p className="subtle">用券 {option.nights_with_voucher} 晚，點數 {option.nights_with_points} 晚，消耗 {formatNumber(option.points_consumed)} 點</p>
-      {option.notes.map((note) => <p className="subtle" key={note}>{note}</p>)}
+    <article className={`${styles.hotelOptionCard} ${recommended ? styles.recommendedHotelOption : ""}`}>
+      <div className={styles.hotelOptionIdentity}>
+        <div className="section-kicker">{recommended ? "♛ 推薦方案" : option.rank ? `排名 #${option.rank}` : "不列入排名"}</div>
+        <h3>{option.label}</h3>
+        <p className="subtle">用券 {option.nights_with_voucher} 晚 · 點數 {option.nights_with_points} 晚 · 消耗 {formatNumber(option.points_consumed)} 點</p>
+        {option.notes.map((note) => <small className="subtle" key={note}>{note}</small>)}
+      </div>
+      <div className={styles.hotelOptionPrice}>
+        <span>{option.available ? "總成本" : "目前狀態"}</span>
+        <strong>{option.available ? formatMoney(option.cash_cost_twd) : "不可用"}</strong>
+        {recommended ? <small>目前成本最低</small> : null}
+      </div>
     </article>
   );
 }
