@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { PageHeader } from "../../../components/ui";
 import {
   BacktestRun,
   BacktestTrade,
@@ -73,20 +74,18 @@ export default function CapitalBacktestsPage() {
   return (
     <main>
       <div className="shell">
-        <nav className="breadcrumb" aria-label="Breadcrumb">
+        <nav className="breadcrumb" aria-label="麵包屑">
           <Link href="/">PhiStyle OS</Link>
           <span>/</span>
           <span>回測</span>
         </nav>
 
-        <section className="page-header">
-          <div>
-            <div className="section-kicker">Capital</div>
-            <h1>回測引擎 v0</h1>
-            <p>用已匯入的日 K 與三大法人資料，跑決定論的 swing 策略回測與 70/30 walk-forward 檢查。</p>
-          </div>
-          <Link className="button" href="/capital/market-data">市場資料</Link>
-        </section>
+        <PageHeader
+          kicker="Capital"
+          title="回測引擎 v0"
+          description="用已匯入的日 K 與三大法人資料，跑決定論的 swing 策略回測與 70/30 walk-forward 檢查。"
+          actions={<Link className="button" href="/capital/market-data">市場資料</Link>}
+        />
 
         <section className="panel">
           <div className={styles.warningLine}>費率為預設值：期貨手續費暫用 TWD 50/口/邊；結果只供研究，不是交易建議。</div>
@@ -138,7 +137,7 @@ function RunList({ runs, selectedRunId, onSelect }: { runs: BacktestRun[]; selec
           className={`${styles.runButton} ${selectedRunId === run.id ? styles.runButtonActive : ""}`}
           onClick={() => onSelect(run)}
         >
-          <span>{String(run.spec_snapshot.name ?? `Run ${run.id}`)}</span>
+          <span>{String(run.spec_snapshot.name ?? `回測 ${run.id}`)}</span>
           <small>{run.range_start} 到 {run.range_end}</small>
         </button>
       ))}

@@ -3,12 +3,20 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { PageHeader, StatusChip } from "../../../../components/ui";
 import {
   CapitalDecisionSummary,
   getCapitalDecision,
   runCapitalDecision,
   submitHumanReview,
 } from "../../../../lib/capitalApi";
+import {
+  RECOMMENDATION_LABELS,
+  REVIEW_DECISION_LABELS,
+  RISK_LABELS,
+  STATUS_LABELS,
+  labelFor,
+} from "../../../../lib/displayConstants";
 
 export default function CapitalDecisionDetailPage() {
   const params = useParams<{ decisionRequestId: string }>();
@@ -27,7 +35,7 @@ export default function CapitalDecisionDetailPage() {
     try {
       setSummary(await getCapitalDecision(decisionRequestId));
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Unable to load Capital decision.");
+      setError(err instanceof Error ? err.message : "讀取 Capital 決策失敗。");
     } finally {
       setIsLoading(false);
     }
@@ -35,7 +43,7 @@ export default function CapitalDecisionDetailPage() {
 
   useEffect(() => {
     if (!Number.isFinite(decisionRequestId)) {
-      setError("Invalid decision id.");
+      setError("決策編號不正確。");
       setIsLoading(false);
       return;
     }
@@ -62,7 +70,7 @@ export default function CapitalDecisionDetailPage() {
       await runCapitalDecision(decisionRequestId);
       await loadDecision();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Unable to run Capital analysis.");
+      setError(err instanceof Error ? err.message : "執行 Capital 分析失敗。");
     } finally {
       setIsRunning(false);
     }
@@ -72,13 +80,13 @@ export default function CapitalDecisionDetailPage() {
     if (!summary?.decision_log || reviewAction) return;
     const normalizedReviewer = reviewer.trim();
     if (!normalizedReviewer) {
-      setError("Reviewer is required before final review.");
+      setError("送出最終審查前，請填寫審查人。");
       return;
     }
     const message =
       decision === "approve"
-        ? "This records the decision as approved. It does not execute a trade or any external action."
-        : "This records the decision as rejected. It does not execute any external action.";
+        ? "這只會把決策紀錄為核准，不會下單，也不會執行任何外部動作。"
+        : "這只會把決策紀錄為拒絕，不會執行任何外部動作。";
     if (!window.confirm(message)) {
       return;
     }
@@ -94,7 +102,7 @@ export default function CapitalDecisionDetailPage() {
       });
       await loadDecision();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Unable to submit human review.");
+      setError(err instanceof Error ? err.message : "送出人工審查失敗。");
     } finally {
       setReviewAction(null);
     }
@@ -103,12 +111,12 @@ export default function CapitalDecisionDetailPage() {
   return (
     <main>
       <div className="shell">
-        <nav className="breadcrumb" aria-label="Breadcrumb">
+        <nav className="breadcrumb" aria-label="麵包屑">
           <Link href="/">PhiStyle OS</Link>
           <span>/</span>
-          <Link href="/capital/decisions">Capital Decisions</Link>
+          <Link href="/capital/decisions">交易決策</Link>
           <span>/</span>
-          <span>#{Number.isFinite(decisionRequestId) ? decisionRequestId : "unknown"}</span>
+          <span>#{Number.isFinite(decisionRequestId) ? decisionRequestId : "未知"}</span>
         </nav>
 
         {isLoading ? (
@@ -123,40 +131,38 @@ export default function CapitalDecisionDetailPage() {
           </section>
         ) : summary ? (
           <>
-            <section className="page-header">
-              <div>
-                <div className="section-kicker">Capital Decision</div>
-                <h1>#{summary.decision_request.id}</h1>
-                <p>{summary.decision_request.question}</p>
-              </div>
-              {!summary.decision_log && !isFinalized ? (
+            <PageHeader
+              kicker="Capital 決策明細"
+              title={`#${summary.decision_request.id}`}
+              description={summary.decision_request.question}
+              actions={!summary.decision_log && !isFinalized ? (
                 <button className="button button-primary" disabled={isRunning} onClick={handleRunPipeline} type="button">
-                  {isRunning ? "Running..." : "Run Analysis"}
+                  {isRunning ? "分析中..." : "執行分析"}
                 </button>
               ) : null}
-            </section>
+            />
 
             {error ? <div className="notice notice-error" role="alert">{error}</div> : null}
 
-            <section className="timeline" aria-label="Capital decision stages">
-              <Stage title="Decision Request" state={stageForDecisionRequest(summary.decision_request.status)}>
+            <section className="timeline" aria-label="Capital 決策階段">
+              <Stage title="決策請求" state={stageForDecisionRequest(summary.decision_request.status)}>
                 <DataGrid
                   items={[
-                    ["Question", summary.decision_request.question],
-                    ["Context", summary.decision_request.context],
-                    ["Options", summary.decision_request.options || "none"],
-                    ["Risk level", summary.decision_request.risk_level],
-                    ["Status", summary.decision_request.status],
+                    ["問題", summary.decision_request.question],
+                    ["背景", summary.decision_request.context],
+                    ["選項", summary.decision_request.options || "無"],
+                    ["風險層級", labelFor(RISK_LABELS, summary.decision_request.risk_level)],
+                    ["狀態", labelFor(STATUS_LABELS, summary.decision_request.status)],
                   ]}
                 />
               </Stage>
 
-              <Stage title="Triage" state={summary.triage_result ? "completed" : "pending"}>
+              <Stage title="分流" state={summary.triage_result ? "completed" : "pending"}>
                 {summary.triage_result ? (
                   <DataGrid
                     items={[
-                      ["ID", String(summary.triage_result.id)],
-                      ["Recommendation", summary.triage_result.recommendation],
+                      ["編號", String(summary.triage_result.id)],
+                      ["建議", labelFor(RECOMMENDATION_LABELS, summary.triage_result.recommendation)],
                     ]}
                   />
                 ) : (
@@ -164,31 +170,31 @@ export default function CapitalDecisionDetailPage() {
                 )}
               </Stage>
 
-              <Stage title="Brain Review" state={summary.brain_review ? "completed" : "pending"}>
+              <Stage title="Brain 審查" state={summary.brain_review ? "completed" : "pending"}>
                 {summary.brain_review ? (
                   <>
                     <DataGrid
                       items={[
-                        ["ID", String(summary.brain_review.id)],
-                        ["Recommendation", summary.brain_review.recommendation],
-                        ["Confidence", summary.brain_review.confidence],
-                        ["LLM status", brainReviewLlmStatus(summary.brain_review)],
+                        ["編號", String(summary.brain_review.id)],
+                        ["建議", labelFor(RECOMMENDATION_LABELS, summary.brain_review.recommendation)],
+                        ["信心", summary.brain_review.confidence],
+                        ["LLM 狀態", brainReviewLlmStatus(summary.brain_review)],
                       ]}
                     />
-                    <p className="subtle">BrainReview remains advisory.</p>
+                    <p className="subtle">Brain 審查只提供建議，不代表核准或執行。</p>
                   </>
                 ) : (
                   <PendingText />
                 )}
               </Stage>
 
-              <Stage title="Decision Log" state={stageForDecisionLog(summary.decision_log?.status)}>
+              <Stage title="決策紀錄" state={stageForDecisionLog(summary.decision_log?.status)}>
                 {summary.decision_log ? (
                   <DataGrid
                     items={[
-                      ["ID", String(summary.decision_log.id)],
-                      ["Status", summary.decision_log.status],
-                      ["Approved by", summary.decision_log.approved_by || "none"],
+                      ["編號", String(summary.decision_log.id)],
+                      ["狀態", labelFor(STATUS_LABELS, summary.decision_log.status)],
+                      ["核准 metadata", summary.decision_log.approved_by || "無"],
                     ]}
                   />
                 ) : (
@@ -196,7 +202,7 @@ export default function CapitalDecisionDetailPage() {
                 )}
               </Stage>
 
-              <Stage title="Human Review" state={stageForHumanReview(summary)}>
+              <Stage title="人工審查" state={stageForHumanReview(summary)}>
                 <HumanReviewSection
                   comment={comment}
                   isSubmitting={reviewAction !== null}
@@ -239,12 +245,12 @@ function HumanReviewSection({
     return (
       <>
         <div className={`final-banner final-${summary.human_review.review_decision}`}>
-          {summary.human_review.review_decision === "approve" ? "Approved Decision Record" : "Rejected Decision Record"}
+          {summary.human_review.review_decision === "approve" ? "已核准決策紀錄" : "已拒絕決策紀錄"}
         </div>
         <DataGrid
           items={[
-            ["Reviewer", summary.human_review.reviewer],
-            ["Review decision", summary.human_review.review_decision],
+            ["審查人", summary.human_review.reviewer],
+            ["審查結果", labelFor(REVIEW_DECISION_LABELS, summary.human_review.review_decision)],
           ]}
         />
       </>
@@ -256,31 +262,31 @@ function HumanReviewSection({
   }
 
   if (summary.decision_log.status !== "proposed" || !summary.requires_human_review) {
-    return <p className="subtle">No active human review action is available for this decision.</p>;
+    return <p className="subtle">此決策目前沒有可執行的人工審查動作。</p>;
   }
 
   return (
     <div className="review-form">
-      <p className="subtle">HumanReview is explicit and record-only. Approval or rejection does not execute trades or external actions.</p>
+      <p className="subtle">人工審查是明確且只記錄的步驟；核准或拒絕都不會下單或執行外部動作。</p>
       <label>
-        <span>Reviewer</span>
+        <span>審查人</span>
         <input value={reviewer} onChange={(event) => onReviewerChange(event.target.value)} placeholder="Kaichang" />
       </label>
       <label>
-        <span>Comment optional</span>
+        <span>備註（選填）</span>
         <textarea
           value={comment}
           onChange={(event) => onCommentChange(event.target.value)}
-          placeholder="Optional review note"
+          placeholder="可填寫審查補充說明；目前 Capital 摘要不會顯示此備註。"
           rows={3}
         />
       </label>
       <div className="form-actions">
         <button className="button button-approve" disabled={isSubmitting} onClick={() => onReview("approve")} type="button">
-          {reviewAction === "approve" ? "Approving..." : "Approve"}
+          {reviewAction === "approve" ? "核准中..." : "核准"}
         </button>
         <button className="button button-danger" disabled={isSubmitting} onClick={() => onReview("reject")} type="button">
-          {reviewAction === "reject" ? "Rejecting..." : "Reject"}
+          {reviewAction === "reject" ? "拒絕中..." : "拒絕"}
         </button>
       </div>
     </div>
@@ -300,7 +306,7 @@ function Stage({
     <article className={`stage stage-${state}`}>
       <div className="stage-header">
         <h2>{title}</h2>
-        <span className={`stage-pill stage-pill-${state}`}>{state}</span>
+        <StatusChip value={state} />
       </div>
       {children}
     </article>
@@ -321,14 +327,14 @@ function DataGrid({ items }: { items: Array<[string, string]> }) {
 }
 
 function PendingText() {
-  return <p className="pending-text">Pending</p>;
+  return <p className="pending-text">待處理</p>;
 }
 
 function brainReviewLlmStatus(summary: NonNullable<CapitalDecisionSummary["brain_review"]>): string {
   if (summary.llm_backed) {
-    return summary.llm_model ? `LLM-backed (${summary.llm_model})` : "LLM-backed";
+    return summary.llm_model ? `LLM 支援（${summary.llm_model}）` : "LLM 支援";
   }
-  return `deterministic fallback: ${summary.llm_fallback_reason || "not run"}`;
+  return `規則 fallback：${summary.llm_fallback_reason || "未執行"}`;
 }
 
 function stageForDecisionRequest(status: string): "pending" | "completed" | "approved" | "rejected" {

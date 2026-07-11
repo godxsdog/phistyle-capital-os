@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { PageHeader, StatusChip } from "../../../components/ui";
 import {
   MarketIngestRun,
   MarketSanityRow,
@@ -14,6 +15,7 @@ import {
   runMarketIngest,
   updateMarketWatchlistSymbol,
 } from "../../../lib/capitalApi";
+import { MARKET_LABELS, SOURCE_LABELS, formatDateTimeZh, labelFor } from "../../../lib/displayConstants";
 import styles from "./MarketDataPage.module.css";
 
 export default function CapitalMarketDataPage() {
@@ -82,7 +84,7 @@ export default function CapitalMarketDataPage() {
     setMessage(null);
     try {
       const result = await runMarketIngest(source);
-      setMessage(result.results.map((row) => `${labelSource(row.source)}：新增 ${row.inserted}、略過 ${row.skipped}、警告 ${row.warnings.length}`).join("；"));
+      setMessage(result.results.map((row) => `${labelFor(SOURCE_LABELS, row.source)}：新增 ${row.inserted}、略過 ${row.skipped}、警告 ${row.warnings.length}`).join("；"));
       await loadAll();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "匯入市場資料失敗。");
@@ -92,20 +94,18 @@ export default function CapitalMarketDataPage() {
   return (
     <main>
       <div className="shell">
-        <nav className="breadcrumb" aria-label="Breadcrumb">
+        <nav className="breadcrumb" aria-label="麵包屑">
           <Link href="/">PhiStyle OS</Link>
           <span>/</span>
           <span>市場資料</span>
         </nav>
 
-        <section className="page-header">
-          <div>
-            <div className="section-kicker">Capital</div>
-            <h1>市場資料健康表</h1>
-            <p>管理美股觀察清單、手動匯入 TAIFEX 與 Yahoo 日 K，並檢查資料缺口與修正警告。</p>
-          </div>
-          <Link className="button" href="/capital/history">交易紀錄</Link>
-        </section>
+        <PageHeader
+          kicker="Capital"
+          title="市場資料健康表"
+          description="管理美股觀察清單、手動匯入 TAIFEX 與 Yahoo 日 K，並檢查資料缺口與修正警告。"
+          actions={<Link className="button" href="/capital/history">交易紀錄</Link>}
+        />
 
         <section className="form-panel">
           <h2>美股觀察清單</h2>
@@ -158,9 +158,9 @@ function WatchlistTable({ rows, onToggle, onDelete }: { rows: MarketWatchlistSym
         <tbody>
           {rows.map((row) => (
             <tr key={row.id}>
-              <td>{row.market === "us" ? "美股" : "TAIFEX"}</td>
+              <td>{labelFor(MARKET_LABELS, row.market)}</td>
               <td>{row.symbol}</td>
-              <td className={row.active ? styles.statusOk : styles.statusWarn}>{row.active ? "啟用" : "停用"}</td>
+              <td><StatusChip value={row.active ? "active" : "inactive"} /></td>
               <td>
                 <div className={styles.rowActions}>
                   <button className="button" type="button" onClick={() => onToggle(row)}>{row.active ? "停用" : "啟用"}</button>
@@ -184,7 +184,7 @@ function SanityTable({ rows }: { rows: MarketSanityRow[] }) {
         <tbody>
           {rows.map((row) => (
             <tr key={`${row.market}-${row.symbol}`}>
-              <td>{row.market === "us" ? "美股" : "TAIFEX"}</td>
+              <td>{labelFor(MARKET_LABELS, row.market)}</td>
               <td>{row.symbol}</td>
               <td>{row.first_date || "-"}</td>
               <td>{row.last_date || "-"}</td>
@@ -208,36 +208,15 @@ function RunsTable({ rows }: { rows: MarketIngestRun[] }) {
         <tbody>
           {rows.map((row) => (
             <tr key={row.id}>
-              <td>{labelSource(row.source)}</td>
+              <td>{labelFor(SOURCE_LABELS, row.source)}</td>
               <td>{row.run_date}</td>
-              <td className={row.status === "success" ? styles.statusOk : styles.statusWarn}>{labelStatus(row.status)}</td>
+              <td><StatusChip value={row.status} /></td>
               <td>{row.detail || "-"}</td>
-              <td>{row.finished_at ? formatDateTime(row.finished_at) : "-"}</td>
+              <td>{formatDateTimeZh(row.finished_at)}</td>
             </tr>
           ))}
         </tbody>
       </table>
     </div>
   );
-}
-
-function labelSource(source: string): string {
-  if (source === "taifex") return "TAIFEX";
-  if (source === "yahoo") return "Yahoo";
-  if (source === "taifex_institutional") return "三大法人";
-  return source;
-}
-
-function labelStatus(status: string): string {
-  const labels: Record<string, string> = {
-    success: "成功",
-    success_with_warnings: "成功但有警告",
-    correction_detected: "偵測到修正",
-    quality_warning: "品質警告",
-  };
-  return labels[status] || status;
-}
-
-function formatDateTime(value: string): string {
-  return new Intl.DateTimeFormat("zh-TW", { dateStyle: "short", timeStyle: "short" }).format(new Date(value));
 }

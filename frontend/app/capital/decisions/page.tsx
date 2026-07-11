@@ -2,7 +2,9 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { DataTable, EmptyState, PageHeader, StatusChip } from "../../../components/ui";
 import { CapitalDecisionListItem, listCapitalDecisions } from "../../../lib/capitalApi";
+import { RISK_LABELS, formatDateZh, labelFor } from "../../../lib/displayConstants";
 
 export default function CapitalDecisionsPage() {
   const [decisions, setDecisions] = useState<CapitalDecisionListItem[]>([]);
@@ -19,12 +21,10 @@ export default function CapitalDecisionsPage() {
       })
       .catch((err: unknown) => {
         if (!isMounted) return;
-        setError(err instanceof Error ? err.message : "Unable to load Capital decisions.");
+        setError(err instanceof Error ? err.message : "讀取 Capital 決策失敗。");
       })
       .finally(() => {
-        if (isMounted) {
-          setIsLoading(false);
-        }
+        if (isMounted) setIsLoading(false);
       });
     return () => {
       isMounted = false;
@@ -34,22 +34,22 @@ export default function CapitalDecisionsPage() {
   return (
     <main>
       <div className="shell">
-        <nav className="breadcrumb" aria-label="Breadcrumb">
+        <nav className="breadcrumb" aria-label="麵包屑">
           <Link href="/">PhiStyle OS</Link>
           <span>/</span>
-          <span>Capital Decisions</span>
+          <span>交易決策</span>
         </nav>
 
-        <section className="page-header">
-          <div>
-            <div className="section-kicker">Capital</div>
-            <h1>Capital Decisions</h1>
-            <p>Create and review Capital investment decision records through the advisory pipeline.</p>
-          </div>
-          <Link className="button button-primary" href="/capital/decisions/new">
-            New Decision
-          </Link>
-        </section>
+        <PageHeader
+          kicker="Capital"
+          title="交易決策"
+          description="建立與審查 Capital 投資決策紀錄；分析管線只在你明確啟動後才會執行。"
+          actions={
+            <Link className="button button-primary" href="/capital/decisions/new">
+              新增決策
+            </Link>
+          }
+        />
 
         {isLoading ? (
           <section className="panel" aria-live="polite">
@@ -61,40 +61,31 @@ export default function CapitalDecisionsPage() {
             {error}
           </section>
         ) : decisions.length === 0 ? (
-          <section className="empty-state">
-            <h2>No Capital decisions yet</h2>
-            <p>Create a decision record first. The pipeline will only run after you explicitly start it.</p>
-            <Link className="button button-primary" href="/capital/decisions/new">
-              New Decision
-            </Link>
-          </section>
+          <EmptyState
+            title="尚無交易決策"
+            description="先建立一筆決策紀錄；管線不會自動執行，也不會自動交易。"
+            actionHref="/capital/decisions/new"
+            actionLabel="新增決策"
+          />
         ) : (
-          <section className="decision-list" aria-label="Capital decision list">
-            {decisions.map((decision) => (
-              <Link className="decision-row" href={`/capital/decisions/${decision.id}`} key={decision.id}>
-                <div>
-                  <div className="row-title">#{decision.id} {decision.question}</div>
-                  <div className="row-meta">
-                    <span>{decision.risk_level}</span>
-                    <span>{decision.status}</span>
-                    <span>{decision.created_by || "unknown creator"}</span>
-                    <span>{formatDate(decision.created_at)}</span>
-                  </div>
-                </div>
-                <span aria-hidden="true">→</span>
-              </Link>
-            ))}
+          <section className="panel" aria-label="交易決策列表">
+            <DataTable
+              columns={["編號", "問題", "風險", "狀態", "建立者", "建立日期", "操作"]}
+              rows={decisions.map((decision) => [
+                `#${decision.id}`,
+                decision.question,
+                labelFor(RISK_LABELS, decision.risk_level),
+                <StatusChip key={decision.id} value={decision.status} />,
+                decision.created_by || "未設定",
+                formatDateZh(decision.created_at),
+                <Link key={`link-${decision.id}`} className="button" href={`/capital/decisions/${decision.id}`}>
+                  開啟
+                </Link>,
+              ])}
+            />
           </section>
         )}
       </div>
     </main>
   );
-}
-
-function formatDate(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-  return date.toLocaleString();
 }

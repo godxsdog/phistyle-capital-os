@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { DataTable, PageHeader } from "../../../components/ui";
 import {
   ImportBatch,
   RealizedTrade,
@@ -12,6 +13,7 @@ import {
   listTradeImports,
   uploadTradeHistory,
 } from "../../../lib/capitalApi";
+import { DIRECTION_LABELS, SOURCE_LABELS, formatDateTimeZh, labelFor } from "../../../lib/displayConstants";
 import styles from "./HistoryPage.module.css";
 
 export default function CapitalHistoryPage() {
@@ -41,7 +43,7 @@ export default function CapitalHistoryPage() {
       setMetrics(nextMetrics);
       setError(null);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Unable to load trade history.");
+      setError(err instanceof Error ? err.message : "讀取交易紀錄失敗。");
     } finally {
       setIsLoading(false);
     }
@@ -56,7 +58,7 @@ export default function CapitalHistoryPage() {
       setSelectedFile(null);
       await loadHistory();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Unable to import trade history.");
+      setError(err instanceof Error ? err.message : "匯入交易紀錄失敗。");
     } finally {
       setIsUploading(false);
     }
@@ -65,40 +67,41 @@ export default function CapitalHistoryPage() {
   return (
     <main>
       <div className="shell">
-        <nav className="breadcrumb" aria-label="Breadcrumb">
+        <nav className="breadcrumb" aria-label="麵包屑">
           <Link href="/">PhiStyle OS</Link>
           <span>/</span>
-          <span>Capital History</span>
+          <span>交易紀錄</span>
         </nav>
 
-        <section className="page-header">
-          <div>
-            <div className="section-kicker">Capital</div>
-            <h1>Trade History</h1>
-            <p>Import synthetic-safe broker history, inspect FIFO realized trades, and review deterministic loss attribution.</p>
-          </div>
-          <Link className="button" href="/capital/decisions">
-            Decisions
-          </Link>
-        </section>
+        <PageHeader
+          kicker="Capital"
+          title="交易紀錄"
+          description="匯入券商 CSV、檢視 FIFO 已實現交易，並閱讀決定論虧損歸因。"
+          actions={
+            <Link className="button" href="/capital/decisions">
+              交易決策
+            </Link>
+          }
+        />
 
         <section className="form-panel">
-          <h2>Schwab CSV Import</h2>
+          <h2>Schwab CSV 匯入</h2>
+          <p className="subtle">上傳檔案只在記憶體處理，不會落地保存；真實對帳單不要提交到 repo。</p>
           <label>
-            <span>Statement CSV</span>
+            <span>對帳單 CSV</span>
             <input accept=".csv,text/csv" type="file" onChange={(event) => setSelectedFile(event.target.files?.[0] || null)} />
           </label>
           <div className="form-actions">
             <button className="button button-primary" disabled={!selectedFile || isUploading} onClick={handleUpload} type="button">
-              {isUploading ? "Importing..." : "Import"}
+              {isUploading ? "匯入中..." : "匯入"}
             </button>
             <button className="button" disabled={isLoading} onClick={loadHistory} type="button">
-              Refresh
+              重新整理
             </button>
           </div>
           {lastImport ? (
             <p className="subtle">
-              Batch #{lastImport.batch_id}: {lastImport.created ? "created" : "already imported"} · fills {lastImport.fill_count} · warnings {lastImport.warning_count}
+              批次 #{lastImport.batch_id}：{lastImport.created ? "已建立" : "已匯入過"} · 成交 {lastImport.fill_count} · 警告 {lastImport.warning_count}
             </p>
           ) : null}
           {error ? <div className="notice notice-error">{error}</div> : null}
@@ -125,35 +128,35 @@ function MetricsPanel({ metrics }: { metrics: TradeAttributionMetrics }) {
   return (
     <section className="panel">
       <div className="stage-header">
-        <h2>Loss Attribution</h2>
-        <span className="stage-pill">{metrics.narrative.llm_backed ? "LLM-backed" : "narrative fallback"}</span>
+        <h2>虧損歸因</h2>
+        <span className="stage-pill">{metrics.narrative.llm_backed ? "LLM 支援" : "規則敘事 fallback"}</span>
       </div>
       <DataGrid
         items={[
-          ["Trades", String(metrics.trade_count)],
-          ["Gross P&L", metrics.gross_pnl],
-          ["Win rate", `${Math.round(metrics.win_rate * 100)}%`],
-          ["Expectancy", metrics.expectancy],
-          ["Max consecutive losses", String(metrics.max_consecutive_losses)],
-          ["Leveraged symbols", metrics.leveraged_symbols.join(", ") || "none"],
+          ["交易數", String(metrics.trade_count)],
+          ["總損益", metrics.gross_pnl],
+          ["勝率", `${Math.round(metrics.win_rate * 100)}%`],
+          ["期望值", metrics.expectancy],
+          ["最大連續虧損", String(metrics.max_consecutive_losses)],
+          ["槓桿標的", metrics.leveraged_symbols.join("、") || "無"],
         ]}
       />
       <p className="subtle">{metrics.narrative.text}</p>
-      <Table
-        columns={["Symbol", "Trades", "Gross P&L", "Fees by month"]}
+      <DataTable
+        columns={["標的", "交易數", "總損益", "月費用"]}
         rows={metrics.by_symbol.map((row) => [
           String(row.key),
           String(row.count),
-          String(row.gross_pnl),
+          <PnlValue key={`${String(row.key)}-pnl`} value={String(row.gross_pnl)} />,
           formatRecord(row.fees_by_month),
         ])}
       />
       <div className={styles.historyGrid}>
-        <MetricTable title="By Direction" rows={metrics.by_direction} />
-        <MetricTable title="By Instrument" rows={metrics.by_instrument_type} />
-        <MetricTable title="By Holding Period" rows={metrics.by_holding_period} />
-        <MetricTable title="By Entry Weekday" rows={metrics.by_entry_weekday} />
-        <MetricTable title="By Entry Hour" rows={metrics.by_entry_hour} />
+        <MetricTable title="依方向" rows={metrics.by_direction} />
+        <MetricTable title="依商品類型" rows={metrics.by_instrument_type} />
+        <MetricTable title="依持有期間" rows={metrics.by_holding_period} />
+        <MetricTable title="依進場星期" rows={metrics.by_entry_weekday} />
+        <MetricTable title="依進場小時" rows={metrics.by_entry_hour} />
       </div>
     </section>
   );
@@ -163,9 +166,13 @@ function MetricTable({ title, rows }: { title: string; rows: Array<Record<string
   return (
     <div className={styles.miniPanel}>
       <h3>{title}</h3>
-      <Table
-        columns={["Bucket", "Trades", "Gross P&L"]}
-        rows={rows.map((row) => [String(row.key), String(row.count), String(row.gross_pnl)])}
+      <DataTable
+        columns={["分類", "交易數", "總損益"]}
+        rows={rows.map((row) => [
+          String(row.key),
+          String(row.count),
+          <PnlValue key={`${String(row.key)}-metric-pnl`} value={String(row.gross_pnl)} />,
+        ])}
       />
     </div>
   );
@@ -174,16 +181,16 @@ function MetricTable({ title, rows }: { title: string; rows: Array<Record<string
 function BatchPanel({ batches }: { batches: ImportBatch[] }) {
   return (
     <section className="panel">
-      <h2>Import Batches</h2>
-      <Table
-        columns={["ID", "Source", "Fills", "Cash rows", "Warnings", "Imported"]}
+      <h2>匯入批次</h2>
+      <DataTable
+        columns={["編號", "來源", "成交列", "現金列", "警告", "匯入時間"]}
         rows={batches.map((batch) => [
-          String(batch.id),
-          batch.source,
+          `#${batch.id}`,
+          labelFor(SOURCE_LABELS, batch.source),
           String(batch.fill_count),
           String(batch.cash_row_count),
           String(batch.warning_count),
-          formatDate(batch.imported_at),
+          formatDateTimeZh(batch.imported_at),
         ])}
       />
     </section>
@@ -193,17 +200,17 @@ function BatchPanel({ batches }: { batches: ImportBatch[] }) {
 function RealizedTradesPanel({ trades }: { trades: RealizedTrade[] }) {
   return (
     <section className="panel">
-      <h2>Realized Trades</h2>
-      <Table
-        columns={["Symbol", "Direction", "Quantity", "Entry", "Exit", "Gross P&L", "Closed"]}
+      <h2>已實現交易</h2>
+      <DataTable
+        columns={["標的", "方向", "數量", "進場均價", "出場均價", "總損益", "平倉時間"]}
         rows={trades.map((trade) => [
           trade.symbol,
-          trade.direction,
+          labelFor(DIRECTION_LABELS, trade.direction),
           trade.quantity,
           trade.avg_entry,
           trade.avg_exit,
-          `${trade.gross_pnl} ${trade.currency}`,
-          trade.closed_at ? formatDate(trade.closed_at) : "unknown",
+          <PnlValue key={`${trade.id}-trade-pnl`} value={trade.gross_pnl} suffix={trade.currency} />,
+          trade.closed_at ? formatDateTimeZh(trade.closed_at) : "未知",
         ])}
       />
     </section>
@@ -223,47 +230,17 @@ function DataGrid({ items }: { items: Array<[string, string]> }) {
   );
 }
 
-function Table({ columns, rows }: { columns: string[]; rows: string[][] }) {
-  if (rows.length === 0) {
-    return <p className="pending-text">No records yet</p>;
-  }
-  return (
-    <div className={styles.tableWrap}>
-      <table className={styles.historyTable}>
-        <thead>
-          <tr>
-            {columns.map((column) => (
-              <th key={column}>{column}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row, index) => (
-            <tr key={`${row.join("-")}-${index}`}>
-              {row.map((cell, cellIndex) => (
-                <td key={`${cell}-${cellIndex}`}>{cell}</td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
 function formatRecord(value: unknown): string {
   if (!value || typeof value !== "object") {
-    return "none";
+    return "無";
   }
   return Object.entries(value as Record<string, unknown>)
     .map(([key, entry]) => `${key}: ${String(entry)}`)
     .join("; ");
 }
 
-function formatDate(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-  return date.toLocaleString();
+function PnlValue({ value, suffix }: { value: string; suffix?: string }) {
+  const numberValue = Number(value);
+  const className = Number.isFinite(numberValue) && numberValue >= 0 ? "text-gain" : "text-loss";
+  return <span className={className}>{value}{suffix ? ` ${suffix}` : ""}</span>;
 }

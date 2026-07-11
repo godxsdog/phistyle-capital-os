@@ -6,6 +6,7 @@
   --muted: #94a3b8;
   --panel: #1e293b;
   --panel-strong: #243449;
+  --surface: #1e293b;
   --line: #334155;
   --accent: #14b8a6;
   --accent-soft: rgba(20, 184, 166, 0.14);
@@ -401,7 +402,8 @@ dt {
   color: var(--warning);
 }
 
-.status-chip-neutral {
+.status-chip-neutral,
+.stage-pill-completed {
   background: rgba(148, 163, 184, 0.1);
   color: var(--muted);
 }

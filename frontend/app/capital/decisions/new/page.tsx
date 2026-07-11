@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
+import { PageHeader } from "../../../../components/ui";
 import { createCapitalDecision } from "../../../../lib/capitalApi";
 
 type RiskLevel = "low" | "medium" | "high";
@@ -28,7 +29,7 @@ export default function NewCapitalDecisionPage() {
     };
 
     if (!payload.question || !payload.context || !payload.options || !payload.created_by) {
-      setError("Question, context, options, and created by are required.");
+      setError("問題、背景、選項與建立者都必填。");
       return;
     }
 
@@ -38,7 +39,7 @@ export default function NewCapitalDecisionPage() {
       const created = await createCapitalDecision(payload);
       router.push(`/capital/decisions/${created.decision_request_id}`);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Unable to create Capital decision.");
+      setError(err instanceof Error ? err.message : "建立 Capital 決策失敗。");
       setIsSubmitting(false);
     }
   }
@@ -46,81 +47,75 @@ export default function NewCapitalDecisionPage() {
   return (
     <main>
       <div className="shell">
-        <nav className="breadcrumb" aria-label="Breadcrumb">
+        <nav className="breadcrumb" aria-label="麵包屑">
           <Link href="/">PhiStyle OS</Link>
           <span>/</span>
-          <Link href="/capital/decisions">Capital Decisions</Link>
+          <Link href="/capital/decisions">交易決策</Link>
           <span>/</span>
-          <span>New</span>
+          <span>新增</span>
         </nav>
 
-        <section className="page-header">
-          <div>
-            <div className="section-kicker">Capital</div>
-            <h1>New Decision</h1>
-            <p>Create a structured investment decision record. Analysis runs only after you open the detail page and start it.</p>
-          </div>
-        </section>
+        <PageHeader
+          kicker="Capital"
+          title="新增決策"
+          description="建立結構化投資決策紀錄。分析只會在你進入明細頁後手動啟動。"
+        />
 
         <form className="form-panel" onSubmit={handleSubmit}>
+          <p className="subtle">此表單只建立決策請求，不會下單、不會核准交易，也不會自動執行 Brain 分析。</p>
           {error ? <div className="notice notice-error" role="alert">{error}</div> : null}
 
           <label>
-            <span>Question</span>
+            <span>問題</span>
             <input
               value={question}
               onChange={(event) => setQuestion(event.target.value)}
-              placeholder="Should I reduce AVGO exposure?"
+              placeholder="是否應該降低 AVGO 部位？"
               required
             />
           </label>
 
           <label>
-            <span>Context</span>
+            <span>背景</span>
             <textarea
               value={context}
               onChange={(event) => setContext(event.target.value)}
-              placeholder="AVGO is now concentrated in the portfolio."
+              placeholder="AVGO 目前在投資組合中比重偏高。"
               required
               rows={5}
             />
           </label>
 
           <label>
-            <span>Options</span>
+            <span>選項</span>
             <input
               value={options}
               onChange={(event) => setOptions(event.target.value)}
-              placeholder="hold | reduce 20% | hedge"
+              placeholder="持有｜減碼 20%｜避險"
               required
             />
           </label>
 
           <label>
-            <span>Risk level</span>
+            <span>風險層級</span>
             <select value={riskLevel} onChange={(event) => setRiskLevel(event.target.value as RiskLevel)}>
-              <option value="low">low</option>
-              <option value="medium">medium</option>
-              <option value="high">high</option>
+              <option value="low">低</option>
+              <option value="medium">中</option>
+              <option value="high">高</option>
             </select>
           </label>
 
           <label>
-            <span>Created by</span>
-            <input
-              value={createdBy}
-              onChange={(event) => setCreatedBy(event.target.value)}
-              placeholder="Kaichang"
-              required
-            />
+            <span>建立者</span>
+            <input value={createdBy} onChange={(event) => setCreatedBy(event.target.value)} placeholder="Kaichang" required />
           </label>
 
           <div className="form-actions">
             <Link className="button" href="/capital/decisions">
-              Cancel
+              取消
             </Link>
             <button className="button button-primary" disabled={isSubmitting} type="submit">
-              {isSubmitting ? "Creating..." : "Create Decision"}
+              {isSubmitting ? "建立中..." : "建立決策"}
             </button>
           </div>
         </form>

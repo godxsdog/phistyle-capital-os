@@ -125,12 +125,12 @@
 }
 
 .positive {
-  color: var(--success);
+  color: var(--gain);
   font-weight: 780;
 }
 
 .negative {
-  color: var(--danger);
+  color: var(--loss);
   font-weight: 780;
 }
 

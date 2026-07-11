@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
+import { PageHeader } from "../../../components/ui";
 import {
   TradePlan,
   TradePlanCreateRequest,
@@ -12,6 +13,7 @@ import {
   listTradePlans,
   markTradePlans,
 } from "../../../lib/capitalApi";
+import { DIRECTION_LABELS, MARKET_LABELS, RISK_LABELS, labelFor } from "../../../lib/displayConstants";
 import styles from "./TradePlansPage.module.css";
 
 const INITIAL_FORM: TradePlanCreateRequest = {
@@ -96,25 +98,23 @@ export default function TradePlansPage() {
   return (
     <main>
       <div className="shell">
-        <nav className="breadcrumb" aria-label="Breadcrumb">
+        <nav className="breadcrumb" aria-label="麵包屑">
           <Link href="/">PhiStyle OS</Link>
           <span>/</span>
           <span>交易計畫</span>
         </nav>
 
-        <section className="page-header">
-          <div>
-            <div className="section-kicker">Capital</div>
-            <h1>交易計畫</h1>
-            <p>建立紙上交易計畫，先做風控檢查，再進既有決策審查流程；系統不會下單或自動平倉。</p>
-          </div>
-          <Link className="button" href="/capital/decisions">決策列表</Link>
-        </section>
+        <PageHeader
+          kicker="Capital"
+          title="交易計畫"
+          description="建立紙上交易計畫，先做風控檢查，再進既有決策審查流程；系統不會下單或自動平倉。"
+          actions={<Link className="button" href="/capital/decisions">決策列表</Link>}
+        />
 
         <form className="form-panel" onSubmit={submitPlan}>
           <h2>新增計畫</h2>
           <div className={styles.grid}>
-            <label><span>市場</span><select value={form.market} onChange={(event) => setForm({ ...form, market: event.target.value as "taifex" | "us", symbol: event.target.value === "taifex" ? "TX" : "" })}><option value="taifex">TAIFEX</option><option value="us">美股</option></select></label>
+            <label><span>市場</span><select value={form.market} onChange={(event) => setForm({ ...form, market: event.target.value as "taifex" | "us", symbol: event.target.value === "taifex" ? "TX" : "" })}><option value="taifex">台指期</option><option value="us">美股</option></select></label>
             <label><span>標的</span>{form.market === "taifex" ? <select value={form.symbol} onChange={(event) => setForm({ ...form, symbol: event.target.value })}><option value="TX">TX</option><option value="MTX">MTX</option><option value="TMF">TMF</option></select> : <input value={form.symbol} onChange={(event) => setForm({ ...form, symbol: event.target.value })} placeholder="AAPL" required />}</label>
             <label><span>方向</span><select value={form.direction} onChange={(event) => setForm({ ...form, direction: event.target.value as "long" | "short" })}><option value="long">做多</option><option value="short">做空</option></select></label>
             <label><span>數量</span><input value={form.quantity} onChange={(event) => setForm({ ...form, quantity: event.target.value })} required /></label>
@@ -158,8 +158,8 @@ function PlansTable({ plans, closeInputs, setCloseInputs, closePlan }: { plans: 
           {plans.map((plan) => (
             <tr key={plan.id}>
               <td>#{plan.id}</td>
-              <td>{plan.market === "taifex" ? "TAIFEX" : "美股"} {plan.symbol}</td>
-              <td>{plan.direction === "long" ? "做多" : "做空"} / 進 {plan.planned_entry} / 停 {plan.stop_price} / 量 {plan.quantity}</td>
+              <td>{labelFor(MARKET_LABELS, plan.market)} {plan.symbol}</td>
+              <td>{labelFor(DIRECTION_LABELS, plan.direction)} / 進 {plan.planned_entry} / 停 {plan.stop_price} / 量 {plan.quantity}</td>
               <td className={plan.risk_check.passed ? styles.ok : styles.warn}>{plan.risk_check.passed ? "通過" : "需高風險審查"}<br />風險 {plan.risk_check.risk_amount} {plan.risk_check.risk_currency}</td>
               <td><Link className="button" href={`/capital/decisions/${plan.decision_request_id}`}>開啟審查</Link></td>
               <td><div className={styles.actions}><input value={closeInputs[plan.id] || ""} onChange={(event) => setCloseInputs({ ...closeInputs, [plan.id]: event.target.value })} placeholder="出場價" /><button className="button" type="button" onClick={() => closePlan(plan)}>結案</button></div></td>
@@ -184,7 +184,7 @@ function Stats({ stats }: { stats: TradePlanStats | null }) {
               <td>{row.closed_plan_count}</td>
               <td>{Math.round(row.win_rate * 100)}%</td>
               <td>{row.expectancy}</td>
-              <td>{row.gross_pnl}</td>
+              <td><span className={Number(row.gross_pnl) >= 0 ? "text-gain" : "text-loss"}>{row.gross_pnl}</span></td>
               <td>{Math.round(row.plan_adherence_rate * 100)}%</td>
             </tr>
           ))}
@@ -195,8 +195,5 @@ function Stats({ stats }: { stats: TradePlanStats | null }) {
 }
 
 function labelRisk(value: string): string {
-  if (value === "high") return "高";
-  if (value === "medium") return "中";
-  if (value === "low") return "低";
-  return value;
+  return labelFor(RISK_LABELS, value);
 }
