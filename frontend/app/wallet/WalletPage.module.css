@@ -11,6 +11,131 @@
   margin-bottom: 18px;
 }
 
+.walletHero {
+  border-top: 3px solid var(--accent);
+}
+
+.totalValue {
+  margin: 6px 0 0;
+  color: var(--ink);
+  font-size: clamp(32px, 5vw, 52px);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.summaryStrip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.summaryStrip > div {
+  display: grid;
+  gap: 4px;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+
+.summaryStrip span,
+.programIdentity small,
+.expiryCountdown small,
+.cppPreview small {
+  color: var(--muted);
+}
+
+.ownerGroup {
+  display: grid;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+.ownerGroup h3 {
+  margin: 0;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.programBalanceRow {
+  display: grid;
+  grid-template-columns: 44px minmax(150px, 1fr) minmax(150px, auto) minmax(110px, auto);
+  gap: 14px;
+  align-items: center;
+  width: 100%;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  padding: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.programBalanceRow:hover {
+  border-color: var(--accent);
+}
+
+.programMonogram {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 20%, var(--panel));
+  color: var(--accent);
+  font-weight: 800;
+}
+
+.programIdentity,
+.expiryCountdown,
+.cppPreview {
+  display: grid;
+  gap: 3px;
+}
+
+.programBalance {
+  font-size: 22px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.expiryCountdown {
+  justify-items: end;
+  text-align: right;
+}
+
+.expiryUrgent {
+  color: var(--warning);
+}
+
+.bonusField {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: center;
+}
+
+.purchasePreviewGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) minmax(220px, 1.2fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.purchasePreviewGrid label {
+  display: grid;
+  gap: 6px;
+}
+
+.cppPreview {
+  padding: 4px 0;
+}
+
+.cppPreview strong {
+  color: var(--accent);
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+}
+
 .grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -312,6 +437,18 @@
   .alertItem,
   .watchItem {
     grid-template-columns: 1fr;
+  }
+
+  .summaryStrip,
+  .programBalanceRow,
+  .purchasePreviewGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .programBalance,
+  .expiryCountdown {
+    justify-items: start;
+    text-align: left;
   }
 
   .transferHead,

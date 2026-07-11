@@ -5,6 +5,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   Account,
   ExpiryAlert,
+  FxRate,
   HotelVoucher,
   Portfolio,
   Program,
@@ -14,11 +15,13 @@ import {
   createHotelVoucher,
   createLedger,
   createProgram,
+  createPurchaseOffer,
   createTransferRule,
   deleteTransferRule,
   getPortfolio,
   listHotelVouchers,
   listExpiryAlerts,
+  listFxRates,
   listAccounts,
   listPrograms,
   listTransferRules,
@@ -106,6 +109,7 @@ export default function WalletPage() {
   const [portfolioWife, setPortfolioWife] = useState<Portfolio | null>(null);
   const [expiryAlerts, setExpiryAlerts] = useState<ExpiryAlert[]>([]);
   const [hotelVouchers, setHotelVouchers] = useState<HotelVoucher[]>([]);
+  const [fxRates, setFxRates] = useState<FxRate[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
 
@@ -149,7 +153,7 @@ export default function WalletPage() {
 
   async function loadWallet() {
     try {
-      const [nextPrograms, nextAccounts, nextRules, nextPortfolioAll, nextPortfolioKent, nextPortfolioWife, nextExpiryAlerts, nextHotelVouchers] = await Promise.all([
+      const [nextPrograms, nextAccounts, nextRules, nextPortfolioAll, nextPortfolioKent, nextPortfolioWife, nextExpiryAlerts, nextHotelVouchers, nextFxRates] = await Promise.all([
         listPrograms(),
         listAccounts(),
         listTransferRules(),
@@ -158,6 +162,7 @@ export default function WalletPage() {
         getPortfolio("wife"),
         listExpiryAlerts(),
         listHotelVouchers(),
+        listFxRates(),
       ]);
       if (!window.localStorage.getItem(FAVORITE_PROGRAM_PREF_KEY)) {
         setFavoriteProgramIds(defaultFavoriteProgramIds(nextPrograms));
@@ -171,6 +176,7 @@ export default function WalletPage() {
       setPortfolioWife(nextPortfolioWife);
       setExpiryAlerts(nextExpiryAlerts);
       setHotelVouchers(nextHotelVouchers);
+      setFxRates(nextFxRates);
       setError(null);
     } catch {
       setError("資料載入失敗，請稍後再試。");
@@ -289,6 +295,7 @@ export default function WalletPage() {
             prefs={prefs}
             updatePrefs={updatePrefs}
             submit={submit}
+            cnyRate={latestFxRate(fxRates, "CNY")}
           />
         ) : null}
 
@@ -352,38 +359,42 @@ function OverviewPanel({
   const [showFavorites, setShowFavorites] = useState(false);
   return (
     <>
-      <section className="panel">
+      <section className={`${styles.walletHero} panel`}>
         <div className={styles.sectionHeader}>
           <div>
-            <h2>總覽</h2>
-            <p className="subtle">常用計畫會排在所有下拉選單與來源列表前面。</p>
+            <div className="section-kicker">點數資產總覽</div>
+            <p className={styles.totalValue}>{formatMoney(portfolio?.total_real_cost_basis_twd)}</p>
+            <p className="subtle">兩人合計真實成本 · 常用計畫會優先排列</p>
           </div>
           <button className="button" type="button" onClick={() => setShowFavorites((value) => !value)}>
             ⭐常用設定
           </button>
         </div>
-        <div className="data-grid">
+        <div className={styles.summaryStrip}>
           <div>
-            <dt>兩人合計真實成本</dt>
-            <dd>{formatMoney(portfolio?.total_real_cost_basis_twd)}</dd>
+            <span>凱章</span>
+            <strong>{formatMoney(kent?.total_real_cost_basis_twd)}</strong>
           </div>
           <div>
-            <dt>凱章真實成本</dt>
-            <dd>{formatMoney(kent?.total_real_cost_basis_twd)}</dd>
+            <span>老婆</span>
+            <strong>{formatMoney(wife?.total_real_cost_basis_twd)}</strong>
           </div>
           <div>
-            <dt>老婆真實成本</dt>
-            <dd>{formatMoney(wife?.total_real_cost_basis_twd)}</dd>
-          </div>
-          <div>
-            <dt>來源計畫頁</dt>
-            <dd>{sourcePrograms.length} 個</dd>
+            <span>來源計畫</span>
+            <strong>{sourcePrograms.length} 個</strong>
           </div>
         </div>
         {showFavorites ? (
           <FavoriteSettings programs={programs} favoriteProgramIds={favoriteProgramIds} setFavoriteProgramIds={setFavoriteProgramIds} />
         ) : null}
       </section>
+
+      <WalletAccountGroups
+        portfolio={portfolio}
+        programs={programs}
+        favoriteProgramIds={favoriteProgramIds}
+        openSource={openSource}
+      />
 
       <section className="panel">
         <div className={styles.sectionHeader}>
@@ -473,6 +484,123 @@ function FavoriteSettings({
   );
 }
 
+function WalletAccountGroups({
+  portfolio,
+  programs,
+  favoriteProgramIds,
+  openSource,
+}: {
+  portfolio: Portfolio | null;
+  programs: Program[];
+  favoriteProgramIds: number[];
+  openSource: (program: Program) => void;
+}) {
+  const rows = portfolio?.accounts || [];
+  return (
+    <section className="panel">
+      <div className={styles.sectionHeader}>
+        <div>
+          <h2>我的計畫</h2>
+          <p className="subtle">依持有人分組，餘額與到期日放在同一眼可讀的位置。</p>
+        </div>
+      </div>
+      {["kent", "wife"].map((owner) => {
+        const ownerRows = rows.filter((row) => row.owner === owner);
+        return (
+          <div className={styles.ownerGroup} key={owner}>
+            <h3>{OWNER_LABELS[owner] || owner}</h3>
+            {ownerRows.length === 0 ? <p className="pending-text">目前沒有計畫。</p> : null}
+            {ownerRows.map((row) => {
+              const program = programs.find((item) => item.id === Number(row.program_id));
+              const name = String(row.program_name || program?.name || "未命名計畫");
+              const expiresAt = row.expires_at ? String(row.expires_at) : null;
+              const daysLeft = expiresAt ? daysUntil(expiresAt) : null;
+              return (
+                <button
+                  className={styles.programBalanceRow}
+                  key={String(row.account_id)}
+                  onClick={() => program && openSource(program)}
+                  type="button"
+                >
+                  <span className={styles.programMonogram}>{programInitial(name)}</span>
+                  <span className={styles.programIdentity}>
+                    <strong>{favoriteLabelFromName(name, favoriteProgramIds, Number(row.program_id))}</strong>
+                    <small>{program ? KIND_LABELS.programKind[program.kind] || program.kind : "點數計畫"}</small>
+                  </span>
+                  <strong className={styles.programBalance}>{formatInteger(row.balance)} 點</strong>
+                  <span className={`${styles.expiryCountdown} ${daysLeft !== null && daysLeft <= 90 ? styles.expiryUrgent : ""}`}>
+                    {daysLeft === null ? "未設定到期" : daysLeft < 0 ? "已到期" : `剩 ${daysLeft} 天`}
+                    {expiresAt ? <small>{expiresAt.replaceAll("-", "/")}</small> : null}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        );
+      })}
+    </section>
+  );
+}
+
+function WanlitongPurchasePanel({
+  program,
+  cnyRate,
+  submit,
+}: {
+  program: Program;
+  cnyRate: FxRate | null;
+  submit: (action: () => Promise<unknown>, message: string) => Promise<void>;
+}) {
+  const [paidAmount, setPaidAmount] = useState("950");
+  const [pointsReceived, setPointsReceived] = useState("500000");
+  const paid = Number(paidAmount || 0);
+  const points = Number(pointsReceived || 0);
+  const rate = Number(cnyRate?.twd_per_unit || 0);
+  const preview = paid > 0 && points > 0 && rate > 0 ? (paid / points) * rate : null;
+  const basePrice = paid > 0 && points > 0 ? paid / points : 0;
+
+  return (
+    <section className="panel">
+      <div className={styles.sectionHeader}>
+        <div>
+          <h2>萬里通購入成本</h2>
+          <p className="subtle">輸入實付人民幣與實收點數；預覽不會回傳或落庫。</p>
+        </div>
+        <span className="stage-pill">CNY/TWD {rate ? rate.toFixed(4) : "尚無匯率"}</span>
+      </div>
+      <div className={styles.purchasePreviewGrid}>
+        <label><span>實付人民幣</span><input value={paidAmount} onChange={(event) => setPaidAmount(event.target.value)} inputMode="decimal" /></label>
+        <label><span>實收萬里通點數</span><input value={pointsReceived} onChange={(event) => setPointsReceived(integerInput(event.target.value))} inputMode="numeric" /></label>
+        <div className={styles.cppPreview}>
+          <span>台幣每點成本預覽</span>
+          <strong>{preview === null ? "等待輸入" : `≈ NT$${preview.toFixed(3)}/點`}</strong>
+          <small>參考，以入庫值為準</small>
+        </div>
+        <button
+          className="button button-primary"
+          disabled={!basePrice || !rate}
+          type="button"
+          onClick={() => submit(() => createPurchaseOffer({
+            program_id: program.id,
+            kind: "official",
+            base_price: String(basePrice),
+            currency: "CNY",
+            bonus_pct: "0",
+            start_date: today(),
+            paid_amount: paidAmount,
+            fees: "0",
+            rebate: "0",
+            points_received: pointsReceived,
+            source_note: "萬里通購入成本",
+          }), "購入成本已儲存；入庫每點成本由後端計算。")}
+        >
+          儲存購入成本
+        </button>
+      </div>
+    </section>
+  );
+}
+
 function SourceProgramPanel({
   program,
   programs,
@@ -484,6 +612,7 @@ function SourceProgramPanel({
   prefs,
   updatePrefs,
   submit,
+  cnyRate,
 }: {
   program: Program;
   programs: Program[];
@@ -495,6 +624,7 @@ function SourceProgramPanel({
   prefs: Preferences;
   updatePrefs: (next: Partial<Preferences>) => void;
   submit: (action: () => Promise<unknown>, message: string) => Promise<void>;
+  cnyRate: FxRate | null;
 }) {
   const [quickTargetId, setQuickTargetId] = useState("");
   const [quickQuantity, setQuickQuantity] = useState("30000");
@@ -544,6 +674,10 @@ function SourceProgramPanel({
           </div>
         </div>
       </section>
+
+      {isWanlitong(program) ? (
+        <WanlitongPurchasePanel program={program} cnyRate={cnyRate} submit={submit} />
+      ) : null}
 
       <section className="panel">
         <div className={styles.sectionHeader}>
@@ -675,11 +809,11 @@ function TransferRuleRow({
         {rule.source_url ? <a href={rule.source_url} target="_blank" rel="noreferrer">查證</a> : <span className="subtle">未填查證連結</span>}
       </div>
       <div className={styles.compactInputs}>
-        <input value={draft.ratio_from} onChange={(event) => updateDraft("ratio_from", event.target.value)} inputMode="decimal" aria-label="送出數量" />
+        <input value={integerInput(draft.ratio_from)} onChange={(event) => updateDraft("ratio_from", integerInput(event.target.value))} inputMode="numeric" aria-label="送出數量" />
         <span>:</span>
-        <input value={draft.ratio_to} onChange={(event) => updateDraft("ratio_to", event.target.value)} inputMode="decimal" aria-label="得到數量" />
+        <input value={integerInput(draft.ratio_to)} onChange={(event) => updateDraft("ratio_to", integerInput(event.target.value))} inputMode="numeric" aria-label="得到數量" />
       </div>
-      <input value={draft.bonus_pct} onChange={(event) => updateDraft("bonus_pct", event.target.value)} inputMode="decimal" aria-label="加贈百分比" />
+      <div className={styles.bonusField}><input value={draft.bonus_pct} onChange={(event) => updateDraft("bonus_pct", event.target.value)} inputMode="decimal" aria-label="加贈百分比" /><span>%</span></div>
       <div className={styles.compactInputs}>
         <select value={draft.rule_kind} onChange={(event) => updateDraft("rule_kind", event.target.value)}>
           <option value="linear">一般</option>
@@ -1396,6 +1530,29 @@ function voucherStatusLabel(status: string): string {
 
 function formatNumber(value: unknown): string {
   return Number(value || 0).toLocaleString("zh-TW", { maximumFractionDigits: 2 });
+}
+
+function formatInteger(value: unknown): string {
+  return Math.round(Number(value || 0)).toLocaleString("zh-TW", { maximumFractionDigits: 0 });
+}
+
+function integerInput(value: string): string {
+  if (value === "") return "";
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) ? String(Math.round(numberValue)) : value.replace(/[^0-9-]/g, "");
+}
+
+function programInitial(name: string): string {
+  const normalized = name.replace(/^⭐\s*/, "").trim();
+  return normalized.slice(0, 1).toUpperCase() || "P";
+}
+
+function isWanlitong(program: Program): boolean {
+  return ["萬里通", "平安萬里通", "wanlitong"].some((alias) => program.name.toLowerCase().includes(alias.toLowerCase()));
+}
+
+function latestFxRate(rates: FxRate[], currency: string): FxRate | null {
+  return rates.find((rate) => rate.currency.toUpperCase() === currency.toUpperCase()) || null;
 }
 
 function today(): string {

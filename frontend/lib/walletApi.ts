@@ -85,6 +85,14 @@ export type PurchaseOffer = {
   source_url: string | null;
 };
 
+export type FxRate = {
+  id: number;
+  currency: string;
+  twd_per_unit: string;
+  as_of: string;
+  source: string;
+};
+
 export type Portfolio = {
   owners: string[];
   total_real_cost_basis_twd: string;
@@ -373,6 +381,10 @@ export async function evaluateHotelStayQuote(quoteId: number): Promise<HotelStay
 
 export async function refreshFxRates(): Promise<{ source: string; created: string }> {
   return requestJson<{ source: string; created: string }>("/wallet/fx-rates/refresh", { method: "POST" });
+}
+
+export async function listFxRates(): Promise<FxRate[]> {
+  return requestJson<FxRate[]>("/wallet/fx-rates");
 }
 
 export async function listAwardQuotes(): Promise<AwardQuote[]> {
