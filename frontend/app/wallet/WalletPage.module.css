@@ -251,24 +251,16 @@
   gap: 8px;
 }
 
-.transferHead,
 .transferRow {
   display: grid;
-  grid-template-columns: 1.1fr 1fr 0.55fr 1.4fr 1.25fr 0.9fr;
-  gap: 8px;
-  align-items: start;
-}
-
-.transferHead {
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 700;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
 }
 
 .transferRow {
-  border: 1px solid var(--line);
-  background: #fff;
-  padding: 10px;
+  border-bottom: 1px solid var(--line);
+  padding: 14px 0;
 }
 
 .compactInputs {
@@ -285,6 +277,70 @@
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.tableCalculator {
+  display: grid;
+  grid-template-columns: auto minmax(100px, 150px) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.ruleSummary {
+  display: grid;
+  gap: 5px;
+}
+
+.ruleSummary strong {
+  font-size: 16px;
+}
+
+.ruleSummary small {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.ruleIconActions {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.ruleIconActions button,
+.ruleIconActions a {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.ruleIconActions button:hover,
+.ruleIconActions a:hover {
+  background: var(--panel-strong);
+}
+
+.ruleEditor {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+
+.ruleEditor label {
+  display: grid;
+  gap: 5px;
+}
+
+.ruleEditor label span {
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .inlineCalc {
@@ -525,7 +581,7 @@
 .alertItem,
 .watchItem {
   border: 1px solid var(--line);
-  background: #fff;
+  background: var(--surface);
   display: grid;
   grid-template-columns: 120px minmax(0, 1fr) auto;
   gap: 10px;
@@ -579,9 +635,8 @@
   .sourceHero,
   .sourceGrid,
   .favoriteSettings,
-  .transferHead,
   .transferRow,
-  .inlineCalc,
+  .ruleEditor,
   .accountRow,
   .awardLine,
   .awardHead,
@@ -629,7 +684,6 @@
     text-align: left;
   }
 
-  .transferHead,
   .awardHead {
     display: none;
   }

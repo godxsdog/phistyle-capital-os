@@ -626,15 +626,15 @@ function SourceProgramPanel({
   submit: (action: () => Promise<unknown>, message: string) => Promise<void>;
   cnyRate: FxRate | null;
 }) {
-  const [quickTargetId, setQuickTargetId] = useState("");
   const [quickQuantity, setQuickQuantity] = useState("30000");
   const cost = Number(manualCost || sourceAvgCost(portfolioAll, program.id) || 0);
   const balances = ownerBalances(portfolioAll, program.id);
   const targetPrograms = programs.filter((item) => rules.some((rule) => rule.to_program_id === item.id));
-  const defaultTargetId = String(targetPrograms.find((item) => String(item.id) === prefs.targetProgramId)?.id || targetPrograms[0]?.id || "");
-  const selectedQuickTargetId = quickTargetId || defaultTargetId;
-  const activeQuickRule = rules.find((rule) => String(rule.to_program_id) === selectedQuickTargetId);
-  const quick = activeQuickRule ? calculateRequiredSourcePoints(activeQuickRule, Number(quickQuantity || 0)) : null;
+  const displayRules = [...rules].sort((left, right) => {
+    const leftName = programs.find((item) => item.id === left.to_program_id)?.name || "";
+    const rightName = programs.find((item) => item.id === right.to_program_id)?.name || "";
+    return leftName.localeCompare(rightName, "zh-TW") || left.id - right.id;
+  });
 
   return (
     <>
@@ -683,8 +683,9 @@ function SourceProgramPanel({
         <div className={styles.sectionHeader}>
           <div>
             <h2>完整兌換表</h2>
-            <p className="subtle">比例一律是「送出 X：得到 Y」，列內即可編輯，不跳頁。</p>
+            <p className="subtle">比例一律是「送出 X：得到 Y」；點編輯才展開完整欄位。</p>
           </div>
+          <label className={styles.tableCalculator}><span>我要</span><input value={quickQuantity} onChange={(event) => setQuickQuantity(event.target.value)} inputMode="numeric" aria-label="共用試算目標點數" /><span>點</span></label>
         </div>
         {rules.length === 0 ? (
           <div className={styles.emptyState}>
@@ -693,21 +694,15 @@ function SourceProgramPanel({
           </div>
         ) : (
           <div className={styles.transferTable}>
-            <div className={styles.transferHead}>
-              <span>目標計畫</span>
-              <span>比例</span>
-              <span>加贈</span>
-              <span>門檻規則</span>
-              <span>試算</span>
-              <span>操作</span>
-            </div>
-            {rules.map((rule) => (
+            {displayRules.map((rule) => (
               <TransferRuleRow
                 key={rule.id}
                 rule={rule}
+                sourceProgram={program}
                 programs={programs}
                 favoriteProgramIds={favoriteProgramIds}
                 sourceCost={cost}
+                targetPoints={Number(quickQuantity || 0)}
                 submit={submit}
               />
             ))}
@@ -727,68 +722,31 @@ function SourceProgramPanel({
         <AiParsePanel sourceProgram={program} programs={programs} favoriteProgramIds={favoriteProgramIds} submit={submit} />
       </div>
 
-      <section className="panel">
-        <h2>快速試算器</h2>
-        <div className={styles.inlineCalc}>
-          <span>我要</span>
-          <select
-            value={selectedQuickTargetId}
-            onChange={(event) => {
-              setQuickTargetId(event.target.value);
-              updatePrefs({ targetProgramId: event.target.value });
-            }}
-          >
-            {targetPrograms.length === 0 ? <option value="">沒有可用目的地</option> : null}
-            {targetPrograms.map((item) => (
-              <option key={item.id} value={item.id}>{programDisplayName(item, favoriteProgramIds)}</option>
-            ))}
-          </select>
-          <input value={quickQuantity} onChange={(event) => setQuickQuantity(event.target.value)} inputMode="numeric" />
-          <span>點</span>
-        </div>
-        {quick && activeQuickRule ? (
-          <div className="data-grid">
-            <div>
-              <dt>需送出 {programDisplayName(program, favoriteProgramIds)}</dt>
-              <dd>{formatNumber(quick.requiredSourcePoints)} 點</dd>
-            </div>
-            <div>
-              <dt>使用規則</dt>
-              <dd>{ruleRatioText(activeQuickRule)}</dd>
-            </div>
-            <div>
-              <dt>總成本</dt>
-              <dd>{formatMoney(quick.requiredSourcePoints * cost)}</dd>
-            </div>
-            <div>
-              <dt>實得</dt>
-              <dd>{formatNumber(quick.receivedPoints)} 點</dd>
-            </div>
-          </div>
-        ) : (
-          <p className="pending-text">請先新增至少一條兌換規則。</p>
-        )}
-      </section>
     </>
   );
 }
 
 function TransferRuleRow({
   rule,
+  sourceProgram,
   programs,
   favoriteProgramIds,
   sourceCost,
+  targetPoints,
   submit,
 }: {
   rule: TransferRule;
+  sourceProgram: Program;
   programs: Program[];
   favoriteProgramIds: number[];
   sourceCost: number;
+  targetPoints: number;
   submit: (action: () => Promise<unknown>, message: string) => Promise<void>;
 }) {
   const [draft, setDraft] = useState<EditableRule>(() => editableRule(rule));
-  const [targetPoints, setTargetPoints] = useState("30000");
-  const calc = calculateRequiredSourcePoints(rule, Number(targetPoints || 0));
+  const [editing, setEditing] = useState(false);
+  const calc = calculateRequiredSourcePoints(rule, targetPoints);
+  const targetProgram = programs.find((program) => program.id === rule.to_program_id);
 
   useEffect(() => {
     setDraft(editableRule(rule));
@@ -800,46 +758,26 @@ function TransferRuleRow({
 
   return (
     <article className={styles.transferRow}>
-      <div>
-        <select value={draft.to_program_id} onChange={(event) => updateDraft("to_program_id", event.target.value)}>
-          {programs.map((program) => (
-            <option key={program.id} value={program.id}>{programDisplayName(program, favoriteProgramIds)}</option>
-          ))}
-        </select>
-        {rule.source_url ? <a href={rule.source_url} target="_blank" rel="noreferrer">查證</a> : <span className="subtle">未填查證連結</span>}
+      <div className={styles.ruleSummary}>
+        <strong>{humanTransferRule(sourceProgram, targetProgram, rule)}</strong>
+        {targetPoints > 0 ? <small>需送 {formatInteger(calc.requiredSourcePoints)}，成本 {formatMoney(calc.requiredSourcePoints * sourceCost)}</small> : null}
       </div>
-      <div className={styles.compactInputs}>
-        <input value={integerInput(draft.ratio_from)} onChange={(event) => updateDraft("ratio_from", integerInput(event.target.value))} inputMode="numeric" aria-label="送出數量" />
-        <span>:</span>
-        <input value={integerInput(draft.ratio_to)} onChange={(event) => updateDraft("ratio_to", integerInput(event.target.value))} inputMode="numeric" aria-label="得到數量" />
+      <div className={styles.ruleIconActions}>
+        <button type="button" title="編輯" aria-label="編輯兌換規則" onClick={() => setEditing(true)}>✏️</button>
+        <button type="button" title="刪除" aria-label="刪除兌換規則" onClick={() => submit(() => deleteTransferRule(rule.id), "兌換規則已刪除。")}>🗑</button>
+        {rule.source_url ? <a href={rule.source_url} target="_blank" rel="noreferrer" title="查證" aria-label="開啟查證連結">🔗</a> : null}
       </div>
-      <div className={styles.bonusField}><input value={draft.bonus_pct} onChange={(event) => updateDraft("bonus_pct", event.target.value)} inputMode="decimal" aria-label="加贈百分比" /><span>%</span></div>
-      <div className={styles.compactInputs}>
-        <select value={draft.rule_kind} onChange={(event) => updateDraft("rule_kind", event.target.value)}>
-          <option value="linear">一般</option>
-          <option value="threshold_block">滿額</option>
-        </select>
-        <input value={draft.block_size} onChange={(event) => updateDraft("block_size", event.target.value)} placeholder="滿額" />
-        <input value={draft.block_bonus_points} onChange={(event) => updateDraft("block_bonus_points", event.target.value)} placeholder="送點" />
-      </div>
-      <div>
-        <input value={targetPoints} onChange={(event) => setTargetPoints(event.target.value)} inputMode="numeric" aria-label="試算目標點數" />
-        <p className="subtle">
-          需送 {formatNumber(calc.requiredSourcePoints)}，成本 {formatMoney(calc.requiredSourcePoints * sourceCost)}
-        </p>
-      </div>
-      <div className={styles.rowActions}>
-        <button
-          className="button button-primary"
-          type="button"
-          onClick={() => submit(() => updateTransferRule(rule.id, transferRulePayload(draft)), "兌換規則已更新。")}
-        >
-          儲存
-        </button>
-        <button className="button" type="button" onClick={() => submit(() => deleteTransferRule(rule.id), "兌換規則已刪除。")}>
-          刪除
-        </button>
-      </div>
+      {editing ? <div className={styles.ruleEditor}>
+        <label><span>目標計畫</span><select value={draft.to_program_id} onChange={(event) => updateDraft("to_program_id", event.target.value)}>{programs.map((program) => <option key={program.id} value={program.id}>{programDisplayName(program, favoriteProgramIds)}</option>)}</select></label>
+        <label><span>送出</span><input value={integerInput(draft.ratio_from)} onChange={(event) => updateDraft("ratio_from", integerInput(event.target.value))} inputMode="numeric" /></label>
+        <label><span>得到</span><input value={integerInput(draft.ratio_to)} onChange={(event) => updateDraft("ratio_to", integerInput(event.target.value))} inputMode="numeric" /></label>
+        <label><span>加贈 %</span><input value={draft.bonus_pct} onChange={(event) => updateDraft("bonus_pct", event.target.value)} inputMode="decimal" /></label>
+        <label><span>規則類型</span><select value={draft.rule_kind} onChange={(event) => updateDraft("rule_kind", event.target.value)}><option value="linear">一般</option><option value="threshold_block">滿額</option></select></label>
+        <label><span>滿額門檻</span><input value={draft.block_size} onChange={(event) => updateDraft("block_size", event.target.value)} /></label>
+        <label><span>門檻加送</span><input value={draft.block_bonus_points} onChange={(event) => updateDraft("block_bonus_points", event.target.value)} /></label>
+        <label><span>查證連結</span><input value={draft.source_url} onChange={(event) => updateDraft("source_url", event.target.value)} /></label>
+        <div className={styles.rowActions}><button className="button button-primary" type="button" onClick={async () => { await submit(() => updateTransferRule(rule.id, transferRulePayload(draft)), "兌換規則已更新。"); setEditing(false); }}>儲存</button><button className="button" type="button" onClick={() => { setDraft(editableRule(rule)); setEditing(false); }}>取消</button></div>
+      </div> : null}
     </article>
   );
 }
@@ -1449,8 +1387,15 @@ function pointsReceived(rule: TransferRule, sourcePoints: number): number {
   return base + bonus;
 }
 
-function ruleRatioText(rule: TransferRule): string {
-  return `${formatNumber(rule.ratio_from)}:${formatNumber(rule.ratio_to)}${Number(rule.bonus_pct || 0) > 0 ? ` +${formatNumber(rule.bonus_pct)}%` : ""}`;
+function humanTransferRule(source: Program, target: Program | undefined, rule: TransferRule): string {
+  const route = `${source.name} → ${target?.name || "未知計畫"}`;
+  if (rule.rule_kind === "threshold_block" && Number(rule.block_size || 0) > 0) {
+    const blockSize = Number(rule.block_size);
+    return `${route}:每滿 ${formatInteger(blockSize)} 送 ${formatInteger(pointsReceived(rule, blockSize))}`;
+  }
+  const bonus = Number(rule.bonus_pct || 0);
+  const bonusText = bonus > 0 ? `(+${bonus.toLocaleString("zh-TW", { maximumFractionDigits: 2 })}% 加贈)` : "";
+  return `${route}:送 ${formatInteger(rule.ratio_from)} 得 ${formatInteger(rule.ratio_to)}${bonusText}`;
 }
 
 function humanThreshold(kind: string, blockSize?: string | null, blockBonus?: string | null): string {

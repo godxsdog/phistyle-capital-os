@@ -15,6 +15,7 @@ import {
   runTripQuest,
 } from "../../../lib/walletApi";
 import { PageHeader } from "../../../components/ui";
+import { QUEST_PROGRAM_CODES } from "../constants";
 import styles from "./QuestPage.module.css";
 
 const PREF_KEY = "phistyle.wallet.quest.preferences";
@@ -52,6 +53,7 @@ export default function TripQuestPage() {
   const [isRunning, setIsRunning] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [showProgramInfo, setShowProgramInfo] = useState(false);
 
   useEffect(() => {
     try {
@@ -67,7 +69,12 @@ export default function TripQuestPage() {
     window.localStorage.setItem(PREF_KEY, JSON.stringify(prefs));
   }, [prefs]);
 
-  const airlinePrograms = useMemo(() => programs.filter((program) => program.kind === "airline"), [programs]);
+  const selectablePrograms = useMemo(() => [...programs].sort((left, right) => {
+    const leftIndex = programCodeIndex(left.name);
+    const rightIndex = programCodeIndex(right.name);
+    return leftIndex !== rightIndex ? leftIndex - rightIndex : left.name.localeCompare(right.name, "zh-TW");
+  }), [programs]);
+  const selectedPrograms = selectablePrograms.filter((program) => prefs.programNames.includes(program.name));
 
   async function loadPage() {
     try {
@@ -219,11 +226,18 @@ export default function TripQuestPage() {
           <label><span>開始日期</span><input name="window_start" type="date" required /></label>
           <label><span>結束日期</span><input name="window_end" type="date" required /></label>
         </div>
+        <div className={styles.selectedPrograms} aria-live="polite">
+          <span>已選</span>
+          {selectedPrograms.length ? selectedPrograms.map((program) => <strong key={program.id}>{programCode(program.name)}</strong>) : <small>尚未選擇計畫</small>}
+        </div>
         <fieldset className={styles.programPicker}>
-          <legend>點數計畫（可多選）</legend>
-          {airlinePrograms.map((program) => (
-            <label key={program.id}><input type="checkbox" checked={prefs.programNames.includes(program.name)} onChange={(event) => setPrefs({ ...prefs, programNames: event.target.checked ? [...prefs.programNames, program.name] : prefs.programNames.filter((name) => name !== program.name) })} />{program.name}</label>
-          ))}
+          <legend>點數計畫（可多選） <button className={styles.infoButton} type="button" aria-label="查看計畫代碼說明" onClick={() => setShowProgramInfo(true)}>ⓘ</button></legend>
+          <div className={styles.programGrid}>
+            {selectablePrograms.map((program) => {
+              const selected = prefs.programNames.includes(program.name);
+              return <button className={`${styles.programChip} ${selected ? styles.programChipSelected : ""}`} key={program.id} type="button" aria-pressed={selected} title={program.name} onClick={() => setPrefs({ ...prefs, programNames: selected ? prefs.programNames.filter((name) => name !== program.name) : [...prefs.programNames, program.name] })}>{programCode(program.name)}</button>;
+            })}
+          </div>
         </fieldset>
         <div className={styles.optionRow}>
           {prefs.mode === "round_trip" ? <label><span>旅程天數</span><input value={prefs.tripDays} onChange={(event) => setPrefs({ ...prefs, tripDays: event.target.value })} inputMode="numeric" required /></label> : null}
@@ -240,6 +254,11 @@ export default function TripQuestPage() {
       </section>
 
       <section className="panel"><h2>過往查詢</h2><div className={styles.questHistory}>{quests.map((quest) => <button className="button" key={quest.id} type="button" onClick={() => void openQuest(quest)}>#{quest.id} {questRouteLabel(quest)} · {quest.window_start}～{quest.window_end}</button>)}{quests.length === 0 ? <p className="pending-text">尚無查詢紀錄。</p> : null}</div></section>
+      {showProgramInfo ? <div className={styles.modalBackdrop} role="presentation" onMouseDown={() => setShowProgramInfo(false)}><section className={styles.programModal} role="dialog" aria-modal="true" aria-labelledby="program-code-title" onMouseDown={(event) => event.stopPropagation()}>
+        <div className={styles.modalHeader}><div><h2 id="program-code-title">代碼 ↔ 完整名稱</h2><p className="subtle">代碼只用於畫面顯示，送往後端的仍是完整計畫名稱。</p></div><button className={styles.closeButton} type="button" aria-label="關閉" onClick={() => setShowProgramInfo(false)}>×</button></div>
+        <div className={styles.modalActions}><button className="button button-primary" type="button" onClick={() => setPrefs({ ...prefs, programNames: selectablePrograms.map((program) => program.name) })}>全部選取</button><button className="button" type="button" onClick={() => setPrefs({ ...prefs, programNames: [] })}>全部清除</button></div>
+        <div className={styles.codeTable}>{QUEST_PROGRAM_CODES.map((item) => <div key={item.code}><strong>{item.code}</strong><span>{item.label}</span></div>)}</div>
+      </section></div> : null}
     </div></main>
   );
 }
@@ -298,6 +317,8 @@ function formatQuestDate(value: string): string {
   return `${year}/${String(month).padStart(2, "0")}/${String(day).padStart(2, "0")}（${weekday}）`;
 }
 function slug(value: string): string { return value.toLowerCase().replace(/[\s_-]/g, ""); }
+function programCodeIndex(name: string): number { const normalized = slug(name); const index = QUEST_PROGRAM_CODES.findIndex((item) => item.aliases.some((alias) => normalized.includes(slug(alias)))); return index < 0 ? QUEST_PROGRAM_CODES.length : index; }
+function programCode(name: string): string { const normalized = slug(name); const match = QUEST_PROGRAM_CODES.find((item) => item.aliases.some((alias) => normalized.includes(slug(alias)))); return match?.code || name.slice(0, 4); }
 function field(data: FormData, name: string): string { const value = data.get(name); return typeof value === "string" ? value : ""; }
 function isBucketVerified(value: string | null): boolean { try { return Boolean(value && (JSON.parse(value) as { bucket_verified?: boolean }).bucket_verified); } catch { return false; } }
 function connectionStatus(value: string | null): string { try { const parsed = value ? JSON.parse(value) as { connection_status?: string; bucket_verified?: boolean } : {}; return parsed.connection_status || (parsed.bucket_verified ? "legacy_unchecked" : "unverified"); } catch { return "unverified"; } }

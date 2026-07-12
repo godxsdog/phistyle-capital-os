@@ -55,3 +55,32 @@ export const PROGRAM_KIND_OPTIONS = [
 ];
 
 export const CURRENCY_OPTIONS = ["TWD", "USD", "JPY", "EUR", "GBP", "HKD", "CAD", "AUD", "CNY"];
+
+export const QUEST_PROGRAM_CODES = [
+  { code: "AS", label: "阿拉斯加航空", aliases: ["Alaska", "Mileage Plan"] },
+  { code: "UA", label: "聯合航空", aliases: ["United", "MileagePlus"] },
+  { code: "AC", label: "加拿大航空 Aeroplan", aliases: ["Aeroplan", "Air Canada", "加拿大航空"] },
+  { code: "NH", label: "全日空 ANA", aliases: ["ANA", "All Nippon", "全日空"] },
+  { code: "BA", label: "英國航空 Avios", aliases: ["British Airways", "BA Avios", "英航"] },
+  { code: "QR", label: "卡達航空", aliases: ["Qatar", "卡達", "卡塔爾"] },
+  { code: "JL", label: "日本航空", aliases: ["JAL", "Japan Airlines", "日航"] },
+  { code: "CX", label: "亞洲萬里通", aliases: ["Cathay", "Asia Miles", "國泰", "亞萬"] },
+  { code: "BR", label: "長榮航空", aliases: ["EVA", "長榮"] },
+  { code: "CI", label: "中華航空", aliases: ["China Airlines", "華航"] },
+  { code: "SQ", label: "新加坡航空", aliases: ["Singapore Airlines", "KrisFlyer", "新航"] },
+  { code: "TK", label: "土耳其航空", aliases: ["Turkish Airlines", "Miles&Smiles", "土航"] },
+  { code: "EK", label: "阿聯酋航空", aliases: ["Emirates", "阿聯酋"] },
+  { code: "EY", label: "阿提哈德航空", aliases: ["Etihad", "阿提哈德"] },
+  { code: "QF", label: "澳洲航空", aliases: ["Qantas", "澳航"] },
+  { code: "AF", label: "Flying Blue", aliases: ["Flying Blue", "Air France", "法航"] },
+  { code: "AY", label: "芬蘭航空", aliases: ["Finnair", "芬蘭"] },
+  { code: "LA", label: "LATAM 航空", aliases: ["LATAM"] },
+  { code: "AV", label: "LifeMiles", aliases: ["LifeMiles", "Avianca"] },
+  { code: "VN", label: "越南航空", aliases: ["Vietnam Airlines", "越南航空"] },
+  { code: "AK", label: "亞洲航空", aliases: ["AirAsia", "亞洲航空", "亞航"] },
+  { code: "攜程", label: "攜程", aliases: ["攜程", "携程", "Ctrip", "Trip.com"] },
+  { code: "飛豬", label: "飛豬", aliases: ["飛豬", "飞猪", "Fliggy"] },
+  { code: "雅高", label: "雅高心悅界", aliases: ["Accor", "ALL", "雅高"] },
+  { code: "香格里", label: "香格里拉會", aliases: ["Shangri-La", "Shangri La", "香格里"] },
+  { code: "溫德姆", label: "溫德姆獎賞", aliases: ["Wyndham", "溫德姆"] },
+] as const;
