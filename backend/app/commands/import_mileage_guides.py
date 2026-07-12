@@ -18,10 +18,15 @@ def main() -> None:
     try:
         result = import_mileage_guides(session, guide_dir=args.guide_dir, commit=args.commit)
         mode = "COMMIT" if args.commit else "DRY-RUN"
-        print(f"[{mode}] mileage guides: candidates={len(result.candidates)} skipped={result.skipped}")
+        print(
+            f"[{mode}] 掃到 {result.scanned} 檔、候選 {len(result.candidates)}、"
+            f"匯入 {len(result.created)}、跳過 {len(result.skipped)}"
+        )
         for candidate in result.candidates:
-            print(f"- {candidate.title} | {candidate.filename} | sha256:{candidate.sha256}")
-        print(f"created={len(result.created)}")
+            action = "將匯入" if not args.commit else "已匯入"
+            print(f"{action}: {candidate.filename} | title={candidate.title} | sha256:{candidate.sha256}")
+        for skipped in result.skipped:
+            print(f"跳過: {skipped.filename} | 原因={skipped.reason}")
     finally:
         session.close()
 

@@ -40,10 +40,17 @@ class GuideImportCandidate:
 
 
 @dataclass(frozen=True)
+class GuideImportSkip:
+    filename: str
+    reason: str
+
+
+@dataclass(frozen=True)
 class GuideImportResult:
+    scanned: int
     candidates: tuple[GuideImportCandidate, ...]
     created: tuple[KnowledgeDocument, ...]
-    skipped: int
+    skipped: tuple[GuideImportSkip, ...]
 
 
 @dataclass(frozen=True)
@@ -62,17 +69,25 @@ def import_mileage_guides(
 ) -> GuideImportResult:
     known_hashes = _guide_hashes(session)
     candidates: list[GuideImportCandidate] = []
-    skipped = 0
-    for path in sorted(guide_dir.glob("*.txt"), key=lambda item: item.name):
-        content = path.read_text(encoding="utf-8-sig")
+    skipped: list[GuideImportSkip] = []
+    files = sorted((path for path in guide_dir.iterdir() if path.is_file()), key=lambda item: item.name)
+    for path in files:
+        if path.suffix.casefold() != ".txt":
+            skipped.append(GuideImportSkip(filename=path.name, reason="副檔名不是 .txt"))
+            continue
+        try:
+            content = path.read_text(encoding="utf-8-sig")
+        except (OSError, UnicodeError) as exc:
+            skipped.append(GuideImportSkip(filename=path.name, reason=f"無法讀取 UTF-8 文字：{exc}"))
+            continue
         digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
         if digest in known_hashes:
-            skipped += 1
+            skipped.append(GuideImportSkip(filename=path.name, reason="內容雜湊已匯入"))
             continue
         candidates.append(
             GuideImportCandidate(
                 filename=path.name,
-                title=GUIDE_PREFIX.sub("", path.stem),
+                title=_guide_title(path),
                 sha256=digest,
                 content=content,
             )
@@ -94,7 +109,12 @@ def import_mileage_guides(
         session.commit()
         for document in created:
             session.refresh(document)
-    return GuideImportResult(candidates=tuple(candidates), created=tuple(created), skipped=skipped)
+    return GuideImportResult(
+        scanned=len(files),
+        candidates=tuple(candidates),
+        created=tuple(created),
+        skipped=tuple(skipped),
+    )
 
 
 def parse_mileage_guides(
@@ -302,6 +322,11 @@ def _guide_hashes(session: Session) -> set[str]:
             if tag.startswith(SHA256_TAG_PREFIX):
                 hashes.add(tag.removeprefix(SHA256_TAG_PREFIX))
     return hashes
+
+
+def _guide_title(path: Path) -> str:
+    stripped = GUIDE_PREFIX.sub("", path.stem).strip()
+    return stripped or path.stem
 
 
 def _mileage_guide_documents(session: Session) -> list[KnowledgeDocument]:

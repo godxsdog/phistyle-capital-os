@@ -1,5 +1,6 @@
 import json
 import importlib
+import sys
 from datetime import UTC, datetime
 from decimal import Decimal
 
@@ -13,6 +14,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from services.llm_router.types import LLMResponse
+from backend.app.commands import import_mileage_guides as import_command
 from shared.database.base import Base
 from shared.models import knowledge, point_wallet, route_advisor  # noqa: F401
 from shared.models.route_advisor import DestRegion, RouteSweetSpot
@@ -64,7 +66,48 @@ def test_guide_import_is_idempotent_by_content_hash(tmp_path):
     assert "mileage_guide,sha256:" in first.created[0].tags
     assert first.created[0].file_path.endswith("合成攻略.txt")
     assert len(second.created) == 0
-    assert second.skipped == 1
+    assert second.scanned == 1
+    assert len(second.skipped) == 1
+    assert second.skipped[0].reason == "內容雜湊已匯入"
+
+
+def test_guide_import_accepts_uuid_chinese_space_filename_and_reports_every_skip(tmp_path):
+    session = make_session()
+    guide_dir = tmp_path / "guides"
+    guide_dir.mkdir()
+    filename = "02a2b4b8-d4fb-4ca1-abf5-312c453c9d55-1783783391956_5-距離制 心法：進階篇.TXT"
+    (guide_dir / filename).write_text("合成中文攻略內容", encoding="utf-8")
+    (guide_dir / "說明.pdf").write_text("not a guide", encoding="utf-8")
+
+    preview = import_mileage_guides(session, guide_dir=guide_dir)
+    committed = import_mileage_guides(session, guide_dir=guide_dir, commit=True)
+
+    assert preview.scanned == 2
+    assert preview.candidates[0].filename == filename
+    assert preview.candidates[0].title == "距離制 心法：進階篇"
+    assert [(row.filename, row.reason) for row in preview.skipped] == [
+        ("說明.pdf", "副檔名不是 .txt")
+    ]
+    assert len(committed.created) == 1
+
+
+def test_guide_import_command_reports_scanned_imported_and_skip_reasons(
+    tmp_path, monkeypatch, capsys
+):
+    session = make_session()
+    guide_dir = tmp_path / "guides"
+    guide_dir.mkdir()
+    (guide_dir / "合成 攻略：一.txt").write_text("合成內容", encoding="utf-8")
+    (guide_dir / "略過檔案.pdf").write_text("not a guide", encoding="utf-8")
+    monkeypatch.setattr(import_command, "SessionLocal", lambda: session)
+    monkeypatch.setattr(sys, "argv", ["import_mileage_guides", "--guide-dir", str(guide_dir)])
+
+    import_command.main()
+
+    output = capsys.readouterr().out
+    assert "掃到 2 檔、候選 1、匯入 0、跳過 1" in output
+    assert "將匯入: 合成 攻略：一.txt" in output
+    assert "跳過: 略過檔案.pdf | 原因=副檔名不是 .txt" in output
 
 
 def test_parse_uses_mock_llm_creates_only_unconfirmed_and_handles_invalid_json(tmp_path):
