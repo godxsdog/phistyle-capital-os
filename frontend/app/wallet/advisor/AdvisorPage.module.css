@@ -1,0 +1,26 @@
+.searchBar { position: sticky; top: 12px; z-index: 5; display: grid; grid-template-columns: minmax(160px, 1fr) auto auto; gap: 12px; align-items: end; }
+.searchBar label { display: grid; gap: 6px; }
+.resultList, .reviewList, .sourceList { display: grid; gap: 12px; }
+.resultCard { display: grid; grid-template-columns: minmax(150px, 0.7fr) minmax(220px, 1.5fr) minmax(130px, 0.6fr); gap: 16px; align-items: center; border-bottom: 1px solid var(--line); padding: 14px 0; }
+.resultCard:last-child { border-bottom: 0; }
+.program { display: grid; gap: 4px; }
+.program strong { font-size: 20px; }
+.miles { text-align: right; }
+.miles strong { display: block; color: var(--accent); font-size: 26px; }
+.reviewCard { display: grid; gap: 14px; border: 1px solid var(--line); padding: 16px; background: var(--surface); }
+.reviewGrid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.reviewGrid label, .wideField { display: grid; gap: 6px; }
+.wideField { grid-column: 1 / -1; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.sourcePanel { border-top: 1px solid var(--line); padding-top: 12px; }
+.sourceContent { max-height: 320px; overflow: auto; white-space: pre-wrap; color: var(--ink); line-height: 1.7; }
+.aiPanel { border-left: 3px solid var(--accent); padding-left: 16px; white-space: pre-wrap; }
+.guideFlow { display: flex; flex-wrap: wrap; gap: 8px; color: var(--muted); }
+.regionForm { display: grid; grid-template-columns: 160px minmax(180px, 1fr) auto; gap: 10px; align-items: end; margin: 16px 0; }
+.regionForm label { display: grid; gap: 6px; }
+.regionList { display: flex; flex-wrap: wrap; gap: 8px; }
+@media (max-width: 760px) {
+  .searchBar, .resultCard, .reviewGrid, .regionForm { grid-template-columns: 1fr; }
+  .miles { text-align: left; }
+  .wideField { grid-column: auto; }
+}

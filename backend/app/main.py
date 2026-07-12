@@ -40,6 +40,7 @@ from shared.models.knowledge import (
 )
 from shared.models.human_review import HumanReviewDecision
 from shared.models.point_wallet import AwardSnapshot, AwardWatch, ExpiryAlert, HotelVoucher, PointProgram, QuestResult, TransferRule, TripQuest
+from shared.models.route_advisor import DestRegion, RouteSweetSpot
 from shared.models.triage import TriageRecommendation, TriageResult, TriageRiskLevel
 from shared.services.brain_review_service import (
     create_brain_review,
@@ -66,9 +67,21 @@ from shared.services.knowledge_service import (
     create_agent_memory,
     create_decision_log,
     create_knowledge_document,
+    get_knowledge_document,
     list_agent_memory,
     list_decision_logs,
     list_knowledge_documents,
+)
+from shared.services.route_advisor_service import (
+    RouteAdvisorError,
+    find_route_recommendations,
+    generate_route_advice,
+    get_sweet_spot,
+    list_dest_regions,
+    list_sweet_spots,
+    transition_sweet_spot_status,
+    update_pending_sweet_spot,
+    upsert_dest_region,
 )
 from shared.services.human_review_service import (
     DecisionLogNotFoundError,
@@ -236,6 +249,51 @@ class KnowledgeDocumentResponse(BaseModel):
     file_path: str | None
     created_at: str
     updated_at: str
+
+
+class RouteSweetSpotUpdateRequest(BaseModel):
+    program_id: int
+    origin_tag: str = "TPE"
+    dest_tag: str
+    cabin: str
+    miles_cost: Decimal | None = None
+    tip: str
+    caveats: str | None = None
+
+
+class RouteSweetSpotStatusRequest(BaseModel):
+    status: str
+
+
+class RouteSweetSpotResponse(BaseModel):
+    id: int
+    program_id: int
+    program_name: str
+    origin_tag: str
+    dest_tag: str
+    cabin: str
+    miles_cost: str | None
+    tip: str
+    caveats: str | None
+    source_doc_id: int
+    source_title: str
+    status: str
+    created_at: str
+
+
+class DestRegionRequest(BaseModel):
+    region: str
+
+
+class DestRegionResponse(BaseModel):
+    airport: str
+    region: str
+
+
+class RouteAdvisorResponse(BaseModel):
+    destination: str
+    recommendations: list[RouteSweetSpotResponse]
+    ai_advice: str | None
 
 
 class AgentMemoryRequest(BaseModel):
@@ -2091,9 +2149,108 @@ def post_wallet_expiry_alert_scan(session: Session = Depends(get_session)) -> li
     return [_expiry_alert_response(row) for row in scan_expiry_alerts(session)]
 
 
+@app.get("/wallet/advisor/sweet-spots", response_model=list[RouteSweetSpotResponse])
+def get_wallet_advisor_sweet_spots(
+    status: str | None = None,
+    session: Session = Depends(get_session),
+) -> list[dict[str, Any]]:
+    try:
+        rows = list_sweet_spots(session, status=status)
+    except PointWalletError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return [_route_sweet_spot_response(row) for row in rows]
+
+
+@app.patch("/wallet/advisor/sweet-spots/{sweet_spot_id}", response_model=RouteSweetSpotResponse)
+def patch_wallet_advisor_sweet_spot(
+    sweet_spot_id: int,
+    request: RouteSweetSpotUpdateRequest,
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    try:
+        row = update_pending_sweet_spot(
+            session,
+            sweet_spot_id=sweet_spot_id,
+            program_id=request.program_id,
+            origin_tag=request.origin_tag,
+            dest_tag=request.dest_tag,
+            cabin=request.cabin,
+            miles_cost=request.miles_cost,
+            tip=request.tip,
+            caveats=request.caveats,
+        )
+    except PointWalletNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PointWalletError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _route_sweet_spot_response(row)
+
+
+@app.post("/wallet/advisor/sweet-spots/{sweet_spot_id}/status", response_model=RouteSweetSpotResponse)
+def post_wallet_advisor_sweet_spot_status(
+    sweet_spot_id: int,
+    request: RouteSweetSpotStatusRequest,
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    try:
+        row = transition_sweet_spot_status(session, sweet_spot_id=sweet_spot_id, status=request.status)
+    except PointWalletNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PointWalletError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _route_sweet_spot_response(row)
+
+
+@app.get("/wallet/advisor/regions", response_model=list[DestRegionResponse])
+def get_wallet_advisor_regions(session: Session = Depends(get_session)) -> list[dict[str, str]]:
+    return [_dest_region_response(row) for row in list_dest_regions(session)]
+
+
+@app.put("/wallet/advisor/regions/{airport}", response_model=DestRegionResponse)
+def put_wallet_advisor_region(
+    airport: str,
+    request: DestRegionRequest,
+    session: Session = Depends(get_session),
+) -> dict[str, str]:
+    try:
+        row = upsert_dest_region(session, airport=airport, region=request.region)
+    except PointWalletError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _dest_region_response(row)
+
+
+@app.get("/wallet/advisor/recommendations", response_model=RouteAdvisorResponse)
+def get_wallet_advisor_recommendations(
+    destination: str,
+    include_ai: bool = False,
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    try:
+        rows = find_route_recommendations(session, destination=destination)
+    except PointWalletError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    advice = generate_route_advice(session, destination=destination, recommendations=rows) if include_ai else None
+    return {
+        "destination": destination.upper(),
+        "recommendations": [_route_sweet_spot_response(row) for row in rows],
+        "ai_advice": advice,
+    }
+
+
 @app.get("/knowledge/documents", response_model=list[KnowledgeDocumentResponse])
 def get_knowledge_documents(session: Session = Depends(get_session)) -> list[dict[str, Any]]:
     return [_knowledge_document_response(document) for document in list_knowledge_documents(session)]
+
+
+@app.get("/knowledge/documents/{document_id}", response_model=KnowledgeDocumentResponse)
+def get_knowledge_document_by_id(
+    document_id: int,
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    document = get_knowledge_document(session, document_id)
+    if document is None:
+        raise HTTPException(status_code=404, detail=f"Unknown knowledge_document_id: {document_id}")
+    return _knowledge_document_response(document)
 
 
 @app.post("/knowledge/documents", response_model=KnowledgeDocumentResponse)
@@ -2879,6 +3036,28 @@ def _quest_result_response(row: QuestResult) -> dict[str, Any]:
         "raw_refs": row.raw_refs,
         "segments_json": row.segments_json,
     }
+
+
+def _route_sweet_spot_response(row: RouteSweetSpot) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "program_id": row.program_id,
+        "program_name": row.program.name,
+        "origin_tag": row.origin_tag,
+        "dest_tag": row.dest_tag,
+        "cabin": row.cabin,
+        "miles_cost": str(row.miles_cost) if row.miles_cost is not None else None,
+        "tip": row.tip,
+        "caveats": row.caveats,
+        "source_doc_id": row.source_doc_id,
+        "source_title": row.source_document.title,
+        "status": row.status,
+        "created_at": row.created_at.isoformat(),
+    }
+
+
+def _dest_region_response(row: DestRegion) -> dict[str, str]:
+    return {"airport": row.airport, "region": row.region}
 
 
 def _funding_scenario_response(row) -> dict[str, Any]:

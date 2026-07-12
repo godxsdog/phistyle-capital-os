@@ -156,6 +156,37 @@ export type TripQuestRunResponse = {
   created_results: number;
 };
 
+export type RouteSweetSpot = {
+  id: number;
+  program_id: number;
+  program_name: string;
+  origin_tag: string;
+  dest_tag: string;
+  cabin: string;
+  miles_cost: string | null;
+  tip: string;
+  caveats: string | null;
+  source_doc_id: number;
+  source_title: string;
+  status: "未確認" | "已確認" | "已否決" | string;
+  created_at: string;
+};
+
+export type RouteAdvisorResult = {
+  destination: string;
+  recommendations: RouteSweetSpot[];
+  ai_advice: string | null;
+};
+
+export type KnowledgeDocument = {
+  id: number;
+  title: string;
+  content: string;
+  file_path: string | null;
+};
+
+export type DestRegion = { airport: string; region: string };
+
 export type FundingScenario = {
   id: number;
   award_quote_id: number;
@@ -469,6 +500,44 @@ export async function runTripQuest(payload: {
 
 export async function listQuestResults(questId: number): Promise<QuestResult[]> {
   return requestJson<QuestResult[]>(`/wallet/trip-quests/${questId}/results`);
+}
+
+export async function getRouteAdvisor(destination: string, includeAi = false): Promise<RouteAdvisorResult> {
+  const params = new URLSearchParams({ destination, include_ai: String(includeAi) });
+  return requestJson<RouteAdvisorResult>(`/wallet/advisor/recommendations?${params.toString()}`);
+}
+
+export async function listRouteSweetSpots(status?: string): Promise<RouteSweetSpot[]> {
+  const params = status ? `?status=${encodeURIComponent(status)}` : "";
+  return requestJson<RouteSweetSpot[]>(`/wallet/advisor/sweet-spots${params}`);
+}
+
+export async function updateRouteSweetSpot(id: number, payload: {
+  program_id: number;
+  origin_tag: string;
+  dest_tag: string;
+  cabin: string;
+  miles_cost: string | null;
+  tip: string;
+  caveats: string | null;
+}): Promise<RouteSweetSpot> {
+  return requestJson<RouteSweetSpot>(`/wallet/advisor/sweet-spots/${id}`, { method: "PATCH", body: JSON.stringify(payload) });
+}
+
+export async function transitionRouteSweetSpot(id: number, status: "已確認" | "已否決"): Promise<RouteSweetSpot> {
+  return requestJson<RouteSweetSpot>(`/wallet/advisor/sweet-spots/${id}/status`, { method: "POST", body: JSON.stringify({ status }) });
+}
+
+export async function getKnowledgeDocument(id: number): Promise<KnowledgeDocument> {
+  return requestJson<KnowledgeDocument>(`/knowledge/documents/${id}`);
+}
+
+export async function listDestRegions(): Promise<DestRegion[]> {
+  return requestJson<DestRegion[]>("/wallet/advisor/regions");
+}
+
+export async function upsertDestRegion(airport: string, region: string): Promise<DestRegion> {
+  return requestJson<DestRegion>(`/wallet/advisor/regions/${airport}`, { method: "PUT", body: JSON.stringify({ region }) });
 }
 
 export async function evaluateAwardQuote(quoteId: number, evaluationDate?: string): Promise<FundingScenario[]> {

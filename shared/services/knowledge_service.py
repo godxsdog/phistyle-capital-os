@@ -43,6 +43,10 @@ def list_knowledge_documents(session: Session) -> list[KnowledgeDocument]:
     return list(session.scalars(select(KnowledgeDocument).order_by(KnowledgeDocument.id)))
 
 
+def get_knowledge_document(session: Session, document_id: int) -> KnowledgeDocument | None:
+    return session.get(KnowledgeDocument, document_id)
+
+
 def create_agent_memory(
     session: Session,
     *,
