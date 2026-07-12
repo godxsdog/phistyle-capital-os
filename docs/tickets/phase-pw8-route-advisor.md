@@ -52,7 +52,8 @@ G2 狀態機(BINDING):未確認 → 已確認|已否決;
   已確認 → 已否決(甜點貶值退役用);已否決=終態不可逆。
   僅「未確認」可編輯欄位;要改已確認的數字 = 否決舊筆、
   另建新筆(手動或重解析),保留審計軌跡。service 層強制。
-G3 dest_regions seed(48 筆,BINDING):
+G3 dest_regions seed(BINDING,以下列清單為準、全數 seed,
+  不另綁數量;r2 修正:原「48 筆」為計數錯誤,實為 54):
   日本:NRT HND KIX ITM NGO FUK CTS OKA
   韓國:ICN GMP PUS
   港澳中:HKG MFM PVG PEK CAN
