@@ -42,6 +42,31 @@ data-rescue/guides/,gitignored 付費內容永不入庫 git)。
   (冪等,只處理新檔)→ 確認新記錄。寫進頁面說明。
 - launcher 加 🗺 里程顧問。
 
+## AMENDMENT r1(Fable 2026-07-12,採 STOP 選項 1 + 補齊資料)
+
+G1 Knowledge 映射(不改 knowledge_documents schema):
+  source_type='import';tags 含 'mileage_guide' 與
+  'sha256:<內容雜湊>'(冪等鍵);file_path=原始檔名;
+  title=檔名去時間戳前綴。
+G2 狀態機(BINDING):未確認 → 已確認|已否決;
+  已確認 → 已否決(甜點貶值退役用);已否決=終態不可逆。
+  僅「未確認」可編輯欄位;要改已確認的數字 = 否決舊筆、
+  另建新筆(手動或重解析),保留審計軌跡。service 層強制。
+G3 dest_regions seed(48 筆,BINDING):
+  日本:NRT HND KIX ITM NGO FUK CTS OKA
+  韓國:ICN GMP PUS
+  港澳中:HKG MFM PVG PEK CAN
+  東南亞:SIN BKK KUL CGK MNL SGN HAN DAD
+  南亞/島嶼:MLE DEL BOM CMB
+  歐洲:LHR CDG FRA AMS ZRH IST MXP FCO MAD VIE MUC
+  北美:LAX SFO SEA JFK ORD BOS YVR HNL
+  澳紐:SYD MEL BNE AKL
+  中東:DXB DOH AUH
+  region 值用上列中文組名;seed 進 migration(參照資料屬
+  additive 例外,先例:Phase 17 內建商品)。
+G4 roadmap 條目:工單核准即生效,roadmap 檔下次維護補一行,
+  不阻塞(沿 PW-6 先例)。
+
 ## 6/8. OUT OF SCOPE / 禁區
 
 向量庫/embedding;自動確認;爬攻略來源網站;起點多選
