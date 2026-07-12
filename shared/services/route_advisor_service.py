@@ -6,7 +6,7 @@ import re
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
@@ -21,6 +21,7 @@ from shared.services.seats_aero_service import airport_code, normalize_cabin, se
 
 
 MILEAGE_GUIDE_TAG = "mileage_guide"
+MILEAGE_PARSED_TAG = "mileage_parsed"
 SHA256_TAG_PREFIX = "sha256:"
 ALLOWED_STATUSES = {"未確認", "已確認", "已否決"}
 STATUS_TRANSITIONS = {"未確認": {"已確認", "已否決"}, "已確認": {"已否決"}, "已否決": set()}
@@ -58,6 +59,8 @@ class SweetSpotParseResult:
     candidates: tuple[dict[str, Any], ...]
     created: tuple[RouteSweetSpot, ...]
     warnings: tuple[str, ...]
+    successful_documents: int
+    failed_documents: int
     skipped_documents: int
 
 
@@ -122,20 +125,28 @@ def parse_mileage_guides(
     *,
     commit: bool = False,
     provider: DeepSeekProvider | None = None,
+    progress: Callable[[str], None] | None = None,
 ) -> SweetSpotParseResult:
-    provider = provider or DeepSeekProvider()
+    provider = provider or DeepSeekProvider(timeout_seconds=90)
     documents = _mileage_guide_documents(session)
     parsed_doc_ids = set(session.scalars(select(RouteSweetSpot.source_doc_id).distinct()))
+    parsed_doc_ids.update(document.id for document in documents if _has_tag(document.tags, MILEAGE_PARSED_TAG))
     programs = list(session.scalars(select(PointProgram).order_by(PointProgram.name)))
     program_by_slug = {seats_source_slug(program.name): program for program in programs}
     candidates: list[dict[str, Any]] = []
     created: list[RouteSweetSpot] = []
     warnings: list[str] = []
+    successful_documents = 0
+    failed_documents = 0
     skipped_documents = 0
-    for document in documents:
+    total_documents = len(documents)
+    for position, document in enumerate(documents, start=1):
+        filename = document.file_path or document.title
         if document.id in parsed_doc_ids:
             skipped_documents += 1
+            _report_progress(progress, f"[{position}/{total_documents}] 跳過:{filename} 原因=已成功解析")
             continue
+        _report_progress(progress, f"[{position}/{total_documents}] 解析中:{filename}")
         try:
             response = provider.chat(
                 LLMRequest(
@@ -143,27 +154,41 @@ def parse_mileage_guides(
                     prompt=_parse_prompt(document),
                 )
             )
-        except Exception:
-            warnings.append(f"{document.title}: DeepSeek 呼叫失敗")
+        except Exception as exc:
+            reason = "逾時（90 秒）" if isinstance(exc, TimeoutError) else f"DeepSeek 呼叫失敗：{exc}"
+            warnings.append(f"{document.title}: {reason}")
+            failed_documents += 1
+            _report_progress(progress, f"[{position}/{total_documents}] 失敗:{filename} 原因={reason}")
             continue
         if response.dry_run:
-            warnings.append(f"{document.title}: 缺少 DeepSeek API key，未解析")
+            reason = "缺少 DeepSeek API key"
+            warnings.append(f"{document.title}: {reason}")
+            failed_documents += 1
+            _report_progress(progress, f"[{position}/{total_documents}] 失敗:{filename} 原因={reason}")
             continue
         try:
             payload = json.loads(response.content)
         except json.JSONDecodeError:
-            warnings.append(f"{document.title}: 回應不是有效 JSON")
+            reason = "回應不是有效 JSON"
+            warnings.append(f"{document.title}: {reason}")
+            failed_documents += 1
+            _report_progress(progress, f"[{position}/{total_documents}] 失敗:{filename} 原因={reason}")
             continue
         rows = payload.get("sweet_spots") if isinstance(payload, dict) else None
         if not isinstance(rows, list):
-            warnings.append(f"{document.title}: JSON 缺少 sweet_spots 陣列")
+            reason = "JSON 缺少 sweet_spots 陣列"
+            warnings.append(f"{document.title}: {reason}")
+            failed_documents += 1
+            _report_progress(progress, f"[{position}/{total_documents}] 失敗:{filename} 原因={reason}")
             continue
+        document_candidates: list[dict[str, Any]] = []
+        document_created: list[RouteSweetSpot] = []
         for index, row in enumerate(rows, start=1):
             normalized = _normalize_candidate(row, document=document, program_by_slug=program_by_slug)
             if isinstance(normalized, str):
                 warnings.append(f"{document.title} 第 {index} 筆：{normalized}")
                 continue
-            candidates.append(normalized)
+            document_candidates.append(normalized)
             if commit:
                 sweet_spot = RouteSweetSpot(
                     program_id=normalized["program_id"],
@@ -177,15 +202,33 @@ def parse_mileage_guides(
                     status="未確認",
                 )
                 session.add(sweet_spot)
-                created.append(sweet_spot)
-    if commit:
-        session.commit()
-        for sweet_spot in created:
-            session.refresh(sweet_spot)
+                document_created.append(sweet_spot)
+        if commit:
+            document.tags = _append_tag(document.tags, MILEAGE_PARSED_TAG)
+            try:
+                session.commit()
+            except Exception as exc:
+                session.rollback()
+                reason = f"資料庫寫入失敗：{exc}"
+                warnings.append(f"{document.title}: {reason}")
+                failed_documents += 1
+                _report_progress(progress, f"[{position}/{total_documents}] 失敗:{filename} 原因={reason}")
+                continue
+            for sweet_spot in document_created:
+                session.refresh(sweet_spot)
+        candidates.extend(document_candidates)
+        created.extend(document_created)
+        successful_documents += 1
+        _report_progress(
+            progress,
+            f"[{position}/{total_documents}] 解析中:{filename} → 候選 {len(document_candidates)} 筆",
+        )
     return SweetSpotParseResult(
         candidates=tuple(candidates),
         created=tuple(created),
         warnings=tuple(warnings),
+        successful_documents=successful_documents,
+        failed_documents=failed_documents,
         skipped_documents=skipped_documents,
     )
 
@@ -322,6 +365,22 @@ def _guide_hashes(session: Session) -> set[str]:
             if tag.startswith(SHA256_TAG_PREFIX):
                 hashes.add(tag.removeprefix(SHA256_TAG_PREFIX))
     return hashes
+
+
+def _has_tag(tags: str | None, expected: str) -> bool:
+    return expected in {tag.strip() for tag in str(tags or "").split(",") if tag.strip()}
+
+
+def _append_tag(tags: str | None, tag: str) -> str:
+    values = [value.strip() for value in str(tags or "").split(",") if value.strip()]
+    if tag not in values:
+        values.append(tag)
+    return ",".join(values)
+
+
+def _report_progress(progress: Callable[[str], None] | None, message: str) -> None:
+    if progress is not None:
+        progress(message)
 
 
 def _guide_title(path: Path) -> str:

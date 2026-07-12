@@ -13,12 +13,8 @@ def main() -> None:
     args = parser.parse_args()
     session = SessionLocal()
     try:
-        result = parse_mileage_guides(session, commit=args.commit)
+        result = parse_mileage_guides(session, commit=args.commit, progress=lambda message: print(message, flush=True))
         mode = "COMMIT" if args.commit else "DRY-RUN"
-        print(
-            f"[{mode}] sweet spots: candidates={len(result.candidates)} "
-            f"created={len(result.created)} skipped_documents={result.skipped_documents}"
-        )
         for candidate in result.candidates:
             printable = {
                 **candidate,
@@ -27,6 +23,12 @@ def main() -> None:
             print(json.dumps(printable, ensure_ascii=False, sort_keys=True))
         for warning in result.warnings:
             print(f"WARNING: {warning}")
+        print(
+            f"[{mode}] 總結：成功 {result.successful_documents} 檔、"
+            f"失敗 {result.failed_documents} 檔、跳過 {result.skipped_documents} 檔、"
+            f"候選總數 {len(result.candidates)} 筆",
+            flush=True,
+        )
     finally:
         session.close()
 
